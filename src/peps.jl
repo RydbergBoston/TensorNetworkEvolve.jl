@@ -3,12 +3,24 @@ export state, statevec, getvlabel, getphysicallabel, newlabel, findbondtensor, v
 export apply_onbond!, apply_onsite!, inner_product, norm, normalize!
 export variables, load_variables!
 using LinearAlgebra
+using OMEinsumContractionOrders: CodeOptimizer, CodeSimplifier
+using OMEinsum: DynamicEinCode, NestedEinsum
 
 # we implement the register interface because we want to use the operator system in Yao.
 abstract type PEPS{T,LT} <:AbstractRegister{1} end
 
 """
-    SimplePEPS
+    SimplePEPS{T,LT}
+
+ a     b     c     d
+ ┆     ┆     ┆     ┆ ← size = nflavor
+ ●--α--●--β--●--γ--● 
+                ↑
+            size ≤ Dmax
+
+`α`, `β` and `γ` are virtual labels.
+`a`, `b`, `c` and `d` are physical labels.
+`aα`, `αbβ`, `βcγ` and `γd` are tensor labels.
 
 * `physical_labels` is a vector of unique physical labels
 * `virtual_labels` is a vector if unique virtual labels
@@ -17,6 +29,10 @@ abstract type PEPS{T,LT} <:AbstractRegister{1} end
 * `vertex_tensors` is a vector of tensors on vertices.
 * `max_index` is the maximum index, used for creating new labels.
 
+* `code_statetensor` is the optimized contraction code for obtaining state vector.
+* `code_inner_product` is the optimized contraction code for obtaining the overlap.
+
+* `nflavor` is the size of physical dimension. For spins, it is 2.
 * `Dmax` is the maximum virtual bond dimension.
 * `ϵ` is useful in compression (e.g. with SVD), to determine the cutoff precision.
 """
@@ -28,15 +44,35 @@ struct SimplePEPS{T, LT<:Union{Int,Char}} <: PEPS{T,LT}
     vertex_tensors::Vector{<:AbstractArray{T}}
     max_index::LT
 
+    # optimized contraction codes
+    code_statetensor::NestedEinsum{DynamicEinCode{LT}}
+    code_inner_product::NestedEinsum{DynamicEinCode{LT}}
+
+    nflavor::Int
     Dmax::Int
     ϵ::Float64
 end
 
 function SimplePEPS(vertex_labels::AbstractVector{<:AbstractVector{LT}}, vertex_tensors::Vector{<:AbstractArray{T}},
-        virtual_labels::AbstractVector{LT}, Dmax::Int, ϵ::Real) where {LT,T}
+        virtual_labels::AbstractVector{LT}, nflavor::Int, Dmax::Int, ϵ::Real, optimizer::CodeOptimizer, simplifier::CodeSimplifier) where {LT,T}
     physical_labels = [vl[findall(∉(virtual_labels), vl)[]] for vl in vertex_labels]
     max_ind = max(maximum(physical_labels), maximum(virtual_labels))
-    SimplePEPS(physical_labels, virtual_labels, vertex_labels, vertex_tensors, max_ind, Dmax, ϵ)
+    # optimal contraction orders
+    optcode_statetensor, optcode_inner_product = _optimized_code(vertex_labels, physical_labels, virtual_labels,
+        max_ind, nflavor, Dmax, optimizer, simplifier)
+    SimplePEPS(physical_labels, virtual_labels, vertex_labels, vertex_tensors, max_ind,
+        optcode_statetensor, optcode_inner_product, nflavor, Dmax, ϵ)
+end
+
+function _optimized_code(alllabels, physical_labels::AbstractVector{LT}, virtual_labels, max_ind, nflavor, D, optimizer, simplifier) where LT
+    code_statetensor = EinCode(alllabels, physical_labels)
+    size_dict = Dict([[l=>nflavor for l in physical_labels]..., [l=>D for l in virtual_labels]...])
+    optcode_statetensor = optimize_code(code_statetensor, size_dict, optimizer, simplifier)
+    rep = [l=>max_ind+i for (i, l) in enumerate(virtual_labels)]
+    merge!(size_dict, Dict([l.second=>D for l in rep]))
+    code_inner_product = EinCode([alllabels..., [replace(l, rep...) for l in alllabels]...], LT[])
+    optcode_inner_product = optimize_code(code_inner_product, size_dict, optimizer, simplifier)
+    return optcode_statetensor, optcode_inner_product
 end
 
 # all labels for vertex tensors and bond tensors (if any)
@@ -44,10 +80,12 @@ alllabels(s::SimplePEPS) = s.vertex_labels
 # all vertex tensors and bond tensors (if any)
 alltensors(s::SimplePEPS) = s.vertex_tensors
 Base.copy(peps::SimplePEPS) = SimplePEPS(copy(peps.physical_labels), copy(peps.virtual_labels),
-    copy(peps.vertex_labels), copy(peps.vertex_tensors), peps.max_index, peps.Dmax, peps.ϵ)
+    copy(peps.vertex_labels), copy(peps.vertex_tensors), peps.max_index, 
+    peps.code_statetensor, peps.code_inner_product, peps.nflavor, peps.Dmax, peps.ϵ)
 function Base.conj(peps::SimplePEPS)
     SimplePEPS(peps.physical_labels, peps.virtual_labels,
-        peps.vertex_labels, conj.(peps.vertex_tensors), peps.max_index, peps.Dmax, peps.ϵ
+        peps.vertex_labels, conj.(peps.vertex_tensors), peps.max_index,
+        peps.code_statetensor, peps.code_inner_product, peps.nflavor, peps.Dmax, peps.ϵ
     )
 end
 
@@ -56,15 +94,23 @@ end
 # ●----●----●----●   ← |peps2⟩
 function inner_product(p1::PEPS{T,LT}, p2::PEPS{T,LT}) where {T,LT}
     p1c = conj(p1)
-    rep = [l=>newlabel(p1, i) for (i, l) in enumerate(p2.virtual_labels)]
-    code = EinCode([alllabels(p1c)..., [replace(l, rep...) for l in alllabels(p2)]...], LT[])
-    direct_contract(code, (alltensors(p1c)..., alltensors(p2)...))[]
+    # we assume `p1` and `p2` have the same structure and virtual bond dimension.
+    p1.code_inner_product(alltensors(p1c)..., alltensors(p2)...)[]
+    #rep = [l=>newlabel(p1, i) for (i, l) in enumerate(p2.virtual_labels)]
+    #code = EinCode([alllabels(p1c)..., [replace(l, rep...) for l in alllabels(p2)]...], LT[])
+    #direct_contract(code, (alltensors(p1c)..., alltensors(p2)...))[]
 end
 
 """
     VidalPEPS
 
 Similar to `SimplePEPS` except it contains one extra field
+
+ a     b     c     d
+ ┆  α  ┆  β  ┆  γ  ┆ ← size = nflavor
+ ●--◆--●--◆--●--◆--● 
+                ↑
+            bond tensor
 
 * `bond_tensors` is a vector of tensors on bonds.
 """
@@ -78,14 +124,23 @@ struct VidalPEPS{T, LT<:Union{Int,Char}} <: PEPS{T,LT}
     bond_tensors::Vector{<:AbstractVector{T}}
     max_index::LT
 
+    # optimized contraction codes
+    code_statetensor::NestedEinsum{DynamicEinCode{LT}}
+    code_inner_product::NestedEinsum{DynamicEinCode{LT}}
+
+    nflavor::Int
     Dmax::Int
     ϵ::Float64
 end
 function VidalPEPS(vertex_labels::AbstractVector{<:AbstractVector{LT}}, vertex_tensors::Vector{<:AbstractArray{T}},
-        virtual_labels::AbstractVector{LT}, bond_tensors::Vector{<:AbstractVector}, Dmax::Int, ϵ::Real) where {LT,T}
+        virtual_labels::AbstractVector{LT}, bond_tensors::Vector{<:AbstractVector}, nflavor::Int, Dmax::Int, ϵ::Real,
+        optimizer::CodeOptimizer, simplifier::CodeSimplifier) where {LT,T}
     physical_labels = [vl[findall(∉(virtual_labels), vl)[]] for vl in vertex_labels]
     max_ind = max(maximum(physical_labels), maximum(virtual_labels))
-    VidalPEPS(physical_labels, virtual_labels, vertex_labels, vertex_tensors, bond_tensors, max_ind, Dmax, ϵ)
+    optcode_statetensor, optcode_inner_product = _optimized_code([vertex_labels..., [[l] for l in virtual_labels]...],
+        physical_labels, virtual_labels, max_ind, nflavor, Dmax, optimizer, simplifier)
+    VidalPEPS(physical_labels, virtual_labels, vertex_labels, vertex_tensors, bond_tensors, max_ind,
+        optcode_statetensor, optcode_inner_product, nflavor, Dmax, ϵ)
 end
 
 alllabels(peps::VidalPEPS) = [peps.vertex_labels..., [[l] for l in peps.virtual_labels]...]
@@ -93,10 +148,12 @@ alltensors(peps::VidalPEPS) = [peps.vertex_tensors..., peps.bond_tensors...]
 # find bond tensor by virtual label
 findbondtensor(peps::VidalPEPS, b) = peps.bond_tensors[findall(==(b), peps.virtual_labels)[]]
 Base.copy(peps::VidalPEPS) = VidalPEPS(copy(peps.physical_labels), copy(peps.virtual_labels),
-    copy(peps.vertex_labels), copy(peps.virtual_tensors), copy(peps.bond_tensors), peps.max_index, peps.Dmax, peps.ϵ)
+    copy(peps.vertex_labels), copy(peps.virtual_tensors), copy(peps.bond_tensors), peps.max_index,
+    peps.code_statetensor, peps.code_inner_product, peps.nflavor, peps.Dmax, peps.ϵ)
 function Base.conj(peps::VidalPEPS)
     VidalPEPS(peps.physical_labels, peps.virtual_labels,
-        peps.vertex_labels, conj.(peps.vertex_tensors), conj.(peps.bond_tensors), peps.max_index, peps.Dmax, peps.ϵ
+        peps.vertex_labels, conj.(peps.vertex_tensors), conj.(peps.bond_tensors), peps.max_index,
+        peps.code_statetensor, peps.code_inner_product, peps.nflavor, peps.Dmax, peps.ϵ
     )
 end
 
@@ -113,6 +170,8 @@ function virtualbonds(peps::PEPS)  # list all virtual bonds (a bond is a 2-tuple
     return bs
 end
 nsite(peps::PEPS) = length(peps.physical_labels)
+nflavor(peps::PEPS) = peps.nflavor
+Dmax(peps::PEPS) = peps.Dmax
 
 # all variables by flattening the tensors
 variables(peps::PEPS) = vcat(vec.(alltensors(peps))...)
@@ -134,16 +193,17 @@ end
 Base.show(io::IO, peps::PEPS) = show(io, MIME"text/plain"(), peps)
 
 # random and zero PEPSs
-zero_vidalpeps(::Type{T}, g::SimpleGraph, D::Int; Dmax=D, ϵ=1e-12) where T = _peps_zero_state(Val(:Vidal), T, g, D, Dmax, ϵ)
-zero_simplepeps(::Type{T}, g::SimpleGraph, D::Int; Dmax=D, ϵ=1e-12) where T = _peps_zero_state(Val(:Simple), T, g, D, Dmax, ϵ)
-function _peps_zero_state(::Val{TYPE}, ::Type{T}, g::SimpleGraph, D::Int, Dmax::Int, ϵ::Real) where {TYPE, T}
+zero_vidalpeps(::Type{T}, g::SimpleGraph, D::Int; nflavor::Int=2, optimizer=GreedyMethod(), simplifier=MergeGreedy(), Dmax=D, ϵ=1e-12) where T = _peps_zero_state(Val(:Vidal), T, g, D, nflavor, Dmax, ϵ, optimizer, simplifier)
+zero_simplepeps(::Type{T}, g::SimpleGraph, D::Int; nflavor::Int=2, optimizer=GreedyMethod(), simplifier=MergeGreedy(), Dmax=D, ϵ=1e-12) where T = _peps_zero_state(Val(:Simple), T, g, D, nflavor, Dmax, ϵ, optimizer, simplifier)
+function _peps_zero_state(::Val{TYPE}, ::Type{T}, g::SimpleGraph, D::Int, nflavor::Int, Dmax::Int, ϵ::Real,
+        optimizer::CodeOptimizer, simplifier::CodeSimplifier) where {TYPE, T}
     virtual_labels = collect(nv(g)+1:nv(g)+ne(g))
     vertex_labels = Vector{Int}[]
     vertex_tensors = Array{T}[]
     edge_map = Dict(zip(edges(g), virtual_labels))
     for i=1:nv(g)
         push!(vertex_labels, [i,[get(edge_map, SimpleEdge(i,nb), get(edge_map,SimpleEdge(nb,i),0)) for nb in neighbors(g, i)]...])
-        t = zeros(T, 2, fill(D, degree(g, i))...)
+        t = zeros(T, nflavor, fill(D, degree(g, i))...)
         t[1] = 1
         push!(vertex_tensors, t)
     end
@@ -152,17 +212,17 @@ function _peps_zero_state(::Val{TYPE}, ::Type{T}, g::SimpleGraph, D::Int, Dmax::
     end
     if TYPE === :Vidal
         bond_tensors = [ones(T, D) for _=1:ne(g)]
-        return VidalPEPS(vertex_labels, vertex_tensors, virtual_labels, bond_tensors, Dmax, ϵ)
+        return VidalPEPS(vertex_labels, vertex_tensors, virtual_labels, bond_tensors, nflavor, Dmax, ϵ, optimizer, simplifier)
     else
-        return SimplePEPS(vertex_labels, vertex_tensors, virtual_labels, Dmax, ϵ)
+        return SimplePEPS(vertex_labels, vertex_tensors, virtual_labels, nflavor, Dmax, ϵ, optimizer, simplifier)
     end
 end
 
-function rand_vidalpeps(::Type{T}, g::SimpleGraph, D::Int; Dmax::Int=D, ϵ=1e-12) where T
-    randn!(zero_vidalpeps(T, g, D; Dmax=Dmax, ϵ=ϵ))
+function rand_vidalpeps(::Type{T}, g::SimpleGraph, D::Int; nflavor::Int=2, optimizer=GreedyMethod(), simplifier=MergeGreedy(), Dmax::Int=D, ϵ=1e-12) where T
+    randn!(zero_vidalpeps(T, g, D; nflavor=nflavor, Dmax=Dmax, ϵ=ϵ, optimizer=optimizer, simplifier=simplifier))
 end
-function rand_simplepeps(::Type{T}, g::SimpleGraph, D::Int; Dmax::Int=D, ϵ=1e-12) where T
-    randn!(zero_simplepeps(T, g, D; Dmax=Dmax, ϵ=ϵ))
+function rand_simplepeps(::Type{T}, g::SimpleGraph, D::Int; nflavor::Int=2, optimizer=GreedyMethod(), simplifier=MergeGreedy(), Dmax::Int=D, ϵ=1e-12) where T
+    randn!(zero_simplepeps(T, g, D; nflavor=nflavor, Dmax=Dmax, ϵ=ϵ, optimizer=optimizer, simplifier=simplifier))
 end
 function Random.randn!(peps::PEPS)
     for t in alltensors(peps)
@@ -189,7 +249,7 @@ function LinearAlgebra.normalize!(peps::PEPS)
 end
 
 # contractor, the not cached version.
-function direct_contract(code::EinCode, tensors; kwargs...)
+function direct_contract(code::EinCode, tensors)
     size_dict = OMEinsum.get_size_dict(OMEinsum.getixs(code), tensors)
     optcode = optimize_code(code, size_dict, GreedyMethod())
     optcode(tensors...)
@@ -200,9 +260,10 @@ end
 # ┆    ┆    ┆    ┆
 # ●----●----●----●   ← |peps⟩
 Base.vec(peps::PEPS) = vec(statetensor(peps))
-function statetensor(peps::PEPS; kwargs...)
-    code = EinCode(alllabels(peps), peps.physical_labels)
-    direct_contract(code, alltensors(peps); kwargs...)
+function statetensor(peps::PEPS)
+    peps.code_statetensor(alltensors(peps)...)
+    #code = EinCode(alllabels(peps), peps.physical_labels)
+    #direct_contract(code, alltensors(peps))
 end
 
 # apply a single site operator
