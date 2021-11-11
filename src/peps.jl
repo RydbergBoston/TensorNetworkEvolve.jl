@@ -6,6 +6,19 @@ using LinearAlgebra
 
 abstract type PEPS{T,LT} end
 
+"""
+    SimplePEPS
+
+* `physical_labels` is a vector of unique physical labels
+* `virtual_labels` is a vector if unique virtual labels
+
+* `vertex_labels` is a vector of vectors, each vector is a labels for tensors.
+* `vertex_tensors` is a vector of tensors on vertices.
+* `max_index` is the maximum index, used for creating new labels.
+
+* `Dmax` is the maximum virtual bond dimension.
+* `ϵ` is useful in compression (e.g. with SVD), to determine the cutoff precision.
+"""
 struct SimplePEPS{T, LT<:Union{Int,Char}} <: PEPS{T,LT}
     physical_labels::Vector{LT}
     virtual_labels::Vector{LT}
@@ -17,6 +30,7 @@ struct SimplePEPS{T, LT<:Union{Int,Char}} <: PEPS{T,LT}
     Dmax::Int
     ϵ::Float64
 end
+
 function SimplePEPS(vertex_labels::AbstractVector{<:AbstractVector{LT}}, vertex_tensors::Vector{<:AbstractArray{T}},
         virtual_labels::AbstractVector{LT}, Dmax::Int, ϵ::Real) where {LT,T}
     physical_labels = [vl[findall(∉(virtual_labels), vl)[]] for vl in vertex_labels]
@@ -24,7 +38,9 @@ function SimplePEPS(vertex_labels::AbstractVector{<:AbstractVector{LT}}, vertex_
     SimplePEPS(physical_labels, virtual_labels, vertex_labels, vertex_tensors, max_ind, Dmax, ϵ)
 end
 
+# all labels for vertex tensors and bond tensors (if any)
 alllabels(s::SimplePEPS) = s.vertex_labels
+# all vertex tensors and bond tensors (if any)
 alltensors(s::SimplePEPS) = s.vertex_tensors
 Base.copy(peps::SimplePEPS) = SimplePEPS(copy(peps.physical_labels), copy(peps.virtual_labels),
     copy(peps.vertex_labels), copy(peps.vertex_tensors), peps.max_index, peps.Dmax, peps.ϵ)
@@ -34,7 +50,6 @@ function Base.conj(peps::SimplePEPS)
     )
 end
 
-# the stochastic reconfiguration approach
 function inner_product(p1::PEPS, p2::PEPS)
     p1c = conj(p1)
     rep = [l=>newlabel(p1, i) for (i, l) in enumerate(p2.virtual_labels)]
@@ -42,6 +57,13 @@ function inner_product(p1::PEPS, p2::PEPS)
     _contract(code, (alltensors(p1c)..., alltensors(p2)...))[]
 end
 
+"""
+    VidalPEPS
+
+Similar to `SimplePEPS` except it contains one extra field
+
+* `bond_tensors` is a vector of tensors on bonds.
+"""
 struct VidalPEPS{T, LT<:Union{Int,Char}} <: PEPS{T,LT}
     physical_labels::Vector{LT}
     virtual_labels::Vector{LT}
@@ -64,7 +86,8 @@ end
 
 alllabels(peps::VidalPEPS) = [peps.vertex_labels..., [[l] for l in peps.virtual_labels]...]
 alltensors(peps::VidalPEPS) = [peps.vertex_tensors..., peps.bond_tensors...]
-findbondtensor(peps::VidalPEPS, b) = (peps.bond_tensors[findall(==(b), peps.virtual_labels)[]])
+# find bond tensor by virtual label
+findbondtensor(peps::VidalPEPS, b) = peps.bond_tensors[findall(==(b), peps.virtual_labels)[]]
 Base.copy(peps::VidalPEPS) = VidalPEPS(copy(peps.physical_labels), copy(peps.virtual_labels),
     copy(peps.vertex_labels), copy(peps.virtual_tensors), copy(peps.bond_tensors), peps.max_index, peps.Dmax, peps.ϵ)
 function Base.conj(peps::VidalPEPS)
@@ -74,10 +97,10 @@ function Base.conj(peps::VidalPEPS)
 end
 
 # label APIs
-getvlabel(peps::PEPS, i::Int) = peps.vertex_labels[i]
-getphysicallabel(peps::PEPS, i::Int) = peps.physical_labels[i]
-newlabel(peps::PEPS, offset) = peps.max_index + offset
-function virtualbonds(peps::PEPS)
+getvlabel(peps::PEPS, i::Int) = peps.vertex_labels[i]  # vertex tensor labels
+getphysicallabel(peps::PEPS, i::Int) = peps.physical_labels[i]  # physical label
+newlabel(peps::PEPS, offset) = peps.max_index + offset  # create a new label
+function virtualbonds(peps::PEPS)  # list all virtual bonds (a bond is a 2-tuple)
     bs = Tuple{Int,Int}[]
     for b in peps.virtual_labels
         i,j = findall(l->b∈l, peps.vertex_labels)
@@ -86,7 +109,9 @@ function virtualbonds(peps::PEPS)
     return bs
 end
 
+# all variables by flattening the tensors
 variables(peps::PEPS) = vcat(vec.(alltensors(peps))...)
+# load all variables to tensors
 function load_variables!(peps::PEPS, variables)
     k = 0
     for t in alltensors(peps)
@@ -103,6 +128,54 @@ function Base.show(io::IO, ::MIME"text/plain", peps::PEPS)
 end
 Base.show(io::IO, peps::PEPS) = show(io, MIME"text/plain"(), peps)
 
+# random and zero PEPSs
+zero_vidalpeps(::Type{T}, g::SimpleGraph, D::Int; Dmax=D, ϵ=1e-12) where T = _peps_zero_state(Val(:Vidal), T, g, D, Dmax, ϵ)
+zero_simplepeps(::Type{T}, g::SimpleGraph, D::Int; Dmax=D, ϵ=1e-12) where T = _peps_zero_state(Val(:Simple), T, g, D, Dmax, ϵ)
+function _peps_zero_state(::Val{TYPE}, ::Type{T}, g::SimpleGraph, D::Int, Dmax::Int, ϵ::Real) where {TYPE, T}
+    virtual_labels = collect(nv(g)+1:nv(g)+ne(g))
+    vertex_labels = Vector{Int}[]
+    vertex_tensors = Array{T}[]
+    edge_map = Dict(zip(edges(g), virtual_labels))
+    for i=1:nv(g)
+        push!(vertex_labels, [i,[get(edge_map, SimpleEdge(i,nb), get(edge_map,SimpleEdge(nb,i),0)) for nb in neighbors(g, i)]...])
+        t = zeros(T, 2, fill(D, degree(g, i))...)
+        t[1] = 1
+        push!(vertex_tensors, t)
+    end
+    if any(vl->any(iszero, vl), vertex_labels)
+        error("incorrect input labels1")
+    end
+    if TYPE === :Vidal
+        bond_tensors = [ones(T, D) for _=1:ne(g)]
+        return VidalPEPS(vertex_labels, vertex_tensors, virtual_labels, bond_tensors, Dmax, ϵ)
+    else
+        return SimplePEPS(vertex_labels, vertex_tensors, virtual_labels, Dmax, ϵ)
+    end
+end
+
+function rand_vidalpeps(::Type{T}, g::SimpleGraph, D::Int; Dmax::Int, ϵ=1e-12) where T
+    randn!(zero_vidalpeps(T, g, D; Dmax=Dmax, ϵ=ϵ))
+end
+function rand_simplepeps(::Type{T}, g::SimpleGraph, D::Int; Dmax::Int, ϵ=1e-12) where T
+    randn!(zero_simplepeps(T, g, D; Dmax=Dmax, ϵ=ϵ))
+end
+function Random.randn!(peps::PEPS)
+    for t in alltensors(peps)
+        randn!(t)
+    end
+    return peps
+end
+
+# normalize
+LinearAlgebra.norm(peps::PEPS) = sqrt(abs(inner_product(peps, peps)))
+function LinearAlgebra.normalize!(peps::PEPS)
+    nm = sqrt(abs(inner_product(peps, peps)))
+    peps.vertex_tensors ./= nm^(1/nqubits(peps))
+    return peps
+end
+
+#### Circuit interfaces ####
+# NOTE: maybe we should have a register type.
 Yao.nqubits(peps::PEPS) = length(peps.physical_labels)
 function Yao.state(peps::PEPS; kwargs...)
     code = EinCode((Tuple.(alllabels(peps))...,), Tuple(peps.physical_labels))
@@ -114,7 +187,15 @@ function _contract(code::EinCode, tensors; kwargs...)
     optcode(tensors...)
 end
 Yao.statevec(peps::PEPS) = vec(state(peps))
-
+function YaoBlocks._apply!(peps::PEPS, block::PutBlock{N,1}) where N
+    apply_onsite!(peps, block.locs[1], block.content)
+end
+function YaoBlocks._apply!(peps::PEPS, block::PutBlock{N,2}) where N
+    apply_onbond!(peps, block.locs..., block.content)
+end
+function YaoBlocks._apply!(peps::PEPS, block::ControlBlock{N,BT,1,1}) where {N,BT}
+    apply_onbond!(peps, block.locs..., block.content)
+end
 function apply_onsite!(peps::PEPS{T,LT}, i, mat::AbstractMatrix) where {T,LT}
     @assert size(mat, 1) == size(mat, 2)
     ti = peps.vertex_tensors[i]
@@ -157,7 +238,7 @@ function apply_onbond!(peps::PEPS, i, j, mat::AbstractArray{T,4}) where T
     D0 = findfirst(<(peps.ϵ), S)
     D = D0 === nothing ? min(peps.Dmax, size(U,2)) : min(D0-1, peps.Dmax)
     if D < size(U, 2)
-        println("truncation error is $(sum(S[D+1:end]))")
+        @info "truncation error is $(sum(S[D+1:end]))"
         S = S[1:D]
         U = U[:,1:D]
         Vt = Vt[:,1:D]
@@ -203,44 +284,6 @@ function _apply_vec(t, l, v, b)
     return EinCode(((l...,), (b,)), (l...,))(t, v)
 end
 
-function _peps_zero_state(::Val{TYPE}, ::Type{T}, g::SimpleGraph, D::Int, Dmax::Int, ϵ::Real) where {TYPE, T}
-    virtual_labels = collect(nv(g)+1:nv(g)+ne(g))
-    vertex_labels = Vector{Int}[]
-    vertex_tensors = Array{T}[]
-    edge_map = Dict(zip(edges(g), virtual_labels))
-    for i=1:nv(g)
-        push!(vertex_labels, [i,[get(edge_map, SimpleEdge(i,nb), get(edge_map,SimpleEdge(nb,i),0)) for nb in neighbors(g, i)]...])
-        t = zeros(T, 2, fill(D, degree(g, i))...)
-        t[1] = 1
-        push!(vertex_tensors, t)
-    end
-    if any(vl->any(iszero, vl), vertex_labels)
-        error("incorrect input labels1")
-    end
-    if TYPE === :Vidal
-        bond_tensors = [ones(T, D) for _=1:ne(g)]
-        return VidalPEPS(vertex_labels, vertex_tensors, virtual_labels, bond_tensors, Dmax, ϵ)
-    else
-        return SimplePEPS(vertex_labels, vertex_tensors, virtual_labels, Dmax, ϵ)
-    end
-end
-
-function Random.randn!(peps::PEPS)
-    for t in alltensors(peps)
-        randn!(t)
-    end
-    return peps
-end
-
-zero_vidalpeps(::Type{T}, g::SimpleGraph, D::Int; Dmax=D, ϵ=1e-12) where T = _peps_zero_state(Val(:Vidal), T, g, D, Dmax, ϵ)
-zero_simplepeps(::Type{T}, g::SimpleGraph, D::Int; Dmax=D, ϵ=1e-12) where T = _peps_zero_state(Val(:Simple), T, g, D, Dmax, ϵ)
-function rand_vidalpeps(::Type{T}, g::SimpleGraph, D::Int; Dmax::Int, ϵ=1e-12) where T
-    randn!(zero_vidalpeps(T, g, D; Dmax=Dmax, ϵ=ϵ))
-end
-function rand_simplepeps(::Type{T}, g::SimpleGraph, D::Int; Dmax::Int, ϵ=1e-12) where T
-    randn!(zero_simplepeps(T, g, D; Dmax=Dmax, ϵ=ϵ))
-end
-
 # compute the expectation value of a Hamiltonian
 function Yao.expect(operator::Add, pa::PEPS{T}, pb::PEPS{T}) where T
     res = 0.0im
@@ -254,11 +297,4 @@ function Yao.expect(operator::PutBlock{N,1}, pa::PEPS{T}, pb::PEPS{T}) where {N,
 end
 function Yao.expect(operator::PutBlock{N,2}, pa::PEPS{T}, pb::PEPS{T}) where {N, T}
     inner_product(pa, apply_onbond!(copy(pb), operator.locs..., reshape(Matrix{T}(operator.content), 2, 2, 2, 2)))
-end
-
-LinearAlgebra.norm(peps::PEPS) = sqrt(abs(inner_product(peps, peps)))
-function LinearAlgebra.normalize!(peps::PEPS)
-    nm = sqrt(abs(inner_product(peps, peps)))
-    peps.vertex_tensors ./= nm^(1/nqubits(peps))
-    return peps
 end
