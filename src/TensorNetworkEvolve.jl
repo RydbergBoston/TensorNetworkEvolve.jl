@@ -12,6 +12,5 @@ using OMEinsumContractionOrders
 
 include("peps.jl")
 include("tebd.jl")
-include("sr.jl")
 
 end
