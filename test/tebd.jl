@@ -8,7 +8,7 @@ using LinearAlgebra, Test
     end
     # simple
     peps = rand_simplepeps(ComplexF64, g, 2; Dmax=10)
-    reg = Yao.ArrayReg(vec(state(peps)))
+    reg = Yao.ArrayReg(vec(peps))
     rydberg_tebd!(peps, g; t=0.3, C=10.0, Δ=0.2, Ω=0.3, nstep=10)
     @test !isapprox(statevec(peps), statevec(reg); atol=1e-3)
     rydberg_tebd!(reg, g; t=0.3, C=10.0, Δ=0.2, Ω=0.3, nstep=10)
@@ -17,7 +17,7 @@ using LinearAlgebra, Test
 
     # vidal
     peps = rand_vidalpeps(ComplexF64, g, 2; Dmax=10, ϵ=1e-10)
-    reg = Yao.ArrayReg(vec(state(peps)))
+    reg = Yao.ArrayReg(vec(peps))
     rydberg_tebd!(peps; t=0.3, C=10.0, Δ=0.2, Ω=0.3, nstep=10)
     @test !isapprox(statevec(peps), statevec(reg); atol=1e-3)
     rydberg_tebd!(reg, g; t=0.3, C=10.0, Δ=0.2, Ω=0.3, nstep=10)

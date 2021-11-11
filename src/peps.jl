@@ -4,7 +4,8 @@ export apply_onbond!, apply_onsite!, inner_product, norm, normalize!
 export variables, load_variables!
 using LinearAlgebra
 
-abstract type PEPS{T,LT} end
+# we implement the register interface because we want to use the operator system in Yao.
+abstract type PEPS{T,LT} <:AbstractRegister{1} end
 
 """
     SimplePEPS
@@ -50,6 +51,9 @@ function Base.conj(peps::SimplePEPS)
     )
 end
 
+# ●----●----●----●   ← ⟨peps1|
+# ┆    ┆    ┆    ┆
+# ●----●----●----●   ← |peps2⟩
 function inner_product(p1::PEPS{T,LT}, p2::PEPS{T,LT}) where {T,LT}
     p1c = conj(p1)
     rep = [l=>newlabel(p1, i) for (i, l) in enumerate(p2.virtual_labels)]
@@ -108,6 +112,7 @@ function virtualbonds(peps::PEPS)  # list all virtual bonds (a bond is a 2-tuple
     end
     return bs
 end
+nsite(peps::PEPS) = length(peps.physical_labels)
 
 # all variables by flattening the tensors
 variables(peps::PEPS) = vcat(vec.(alltensors(peps))...)
@@ -123,7 +128,7 @@ end
 
 function Base.show(io::IO, ::MIME"text/plain", peps::PEPS)
     println(io, typeof(peps), " (Dmax = $(peps.Dmax), ϵ = $(peps.ϵ))")
-    println(io, " # of spins = $(nqubits(peps))")
+    println(io, " # of spins = $(nsite(peps))")
     print(io, " # of virtual degrees = $(length(peps.virtual_labels))")
 end
 Base.show(io::IO, peps::PEPS) = show(io, MIME"text/plain"(), peps)
@@ -153,10 +158,10 @@ function _peps_zero_state(::Val{TYPE}, ::Type{T}, g::SimpleGraph, D::Int, Dmax::
     end
 end
 
-function rand_vidalpeps(::Type{T}, g::SimpleGraph, D::Int; Dmax::Int, ϵ=1e-12) where T
+function rand_vidalpeps(::Type{T}, g::SimpleGraph, D::Int; Dmax::Int=D, ϵ=1e-12) where T
     randn!(zero_vidalpeps(T, g, D; Dmax=Dmax, ϵ=ϵ))
 end
-function rand_simplepeps(::Type{T}, g::SimpleGraph, D::Int; Dmax::Int, ϵ=1e-12) where T
+function rand_simplepeps(::Type{T}, g::SimpleGraph, D::Int; Dmax::Int=D, ϵ=1e-12) where T
     randn!(zero_simplepeps(T, g, D; Dmax=Dmax, ϵ=ϵ))
 end
 function Random.randn!(peps::PEPS)
@@ -166,12 +171,21 @@ function Random.randn!(peps::PEPS)
     return peps
 end
 
-# normalize
+# multiply a peps with a constant
+function LinearAlgebra.rmul!(peps::PEPS, c::Number)
+    peps.vertex_tensors .*= c^(1/nsite(peps))
+    return peps
+end
+
+# norm of a peps
+#
+# ●----●----●----●   ← ⟨peps|
+# ┆    ┆    ┆    ┆
+# ●----●----●----●   ← |peps⟩
 LinearAlgebra.norm(peps::PEPS) = sqrt(abs(inner_product(peps, peps)))
 function LinearAlgebra.normalize!(peps::PEPS)
     nm = sqrt(abs(inner_product(peps, peps)))
-    peps.vertex_tensors ./= nm^(1/nqubits(peps))
-    return peps
+    return rmul!(peps, 1/nm)
 end
 
 # contractor, the not cached version.
@@ -181,47 +195,14 @@ function direct_contract(code::EinCode, tensors; kwargs...)
     optcode(tensors...)
 end
 
-#### Circuit interfaces ####
-# NOTE: we should have a register type.
-Yao.nqubits(peps::PEPS) = length(peps.physical_labels)
-
-# contract the peps and obtain the state
+# contract the peps and obtain the state vector
 #
 # ┆    ┆    ┆    ┆
 # ●----●----●----●   ← |peps⟩
-function Yao.state(peps::PEPS; kwargs...)
+Base.vec(peps::PEPS) = vec(statetensor(peps))
+function statetensor(peps::PEPS; kwargs...)
     code = EinCode(alllabels(peps), peps.physical_labels)
     direct_contract(code, alltensors(peps); kwargs...)
-end
-Yao.statevec(peps::PEPS) = vec(state(peps))
-function YaoBlocks._apply!(peps::PEPS, block::PutBlock{N,1}) where N
-    apply_onsite!(peps, block.locs[1], block.content)
-end
-function YaoBlocks._apply!(peps::PEPS, block::PutBlock{N,2}) where N
-    apply_onbond!(peps, block.locs..., block.content)
-end
-function YaoBlocks._apply!(peps::PEPS, block::ControlBlock{N,BT,1,1}) where {N,BT}
-    apply_onbond!(peps, block.locs..., block.content)
-end
-# compute the expectation value of a Hamiltonian
-#
-# ●----●----●----●   ← ⟨peps|
-# ┆    ┆    ┆    ┆
-# ┆    ■----■  ← (operator)
-# ┆    ┆    ┆    ┆
-# ●----●----●----●   ← |peps⟩
-function Yao.expect(operator::Add, pa::PEPS{T}, pb::PEPS{T}) where T
-    res = 0.0im
-    for term in Yao.subblocks(operator)
-        res += expect(term, pa, pb)
-    end
-    return res
-end
-function Yao.expect(operator::PutBlock{N,1}, pa::PEPS{T}, pb::PEPS{T}) where {N, T}
-    inner_product(pa, apply_onsite!(copy(pb), operator.locs[1], Matrix{T}(operator.content)))
-end
-function Yao.expect(operator::PutBlock{N,2}, pa::PEPS{T}, pb::PEPS{T}) where {N, T}
-    inner_product(pa, apply_onbond!(copy(pb), operator.locs..., reshape(Matrix{T}(operator.content), 2, 2, 2, 2)))
 end
 
 # apply a single site operator
@@ -320,4 +301,46 @@ end
 
 function _apply_vec(t, l, v, b)
     return EinCode([l, [b]], l)(t, v)
+end
+
+#### Circuit interfaces ####
+# NOTE: we should have a register type.
+Yao.nqubits(peps::PEPS) = nsite(peps)
+Yao.nactive(peps::PEPS) = nsite(peps)
+Yao.statevec(peps::PEPS) = vec(peps)
+function YaoBlocks._apply!(peps::PEPS{T}, block::PutBlock{N,1}) where {T,N}
+    apply_onsite!(peps, block.locs[1], Matrix{T}(block.content))
+end
+function YaoBlocks._apply!(peps::PEPS{T}, block::PutBlock{N,2}) where {T,N}
+    apply_onbond!(peps, block.locs..., reshape(Matrix{T}(block.content), 2, 2, 2, 2))
+end
+function YaoBlocks._apply!(peps::PEPS{T}, block::KronBlock{N,M,BT}) where {T,N,M,BT<:NTuple{M,AbstractBlock{1}}}
+    for (loc, g) in zip(block.locs, subblocks(block))
+        apply_onsite!(peps, loc[1], Matrix{T}(g))
+    end
+    return peps
+end
+function YaoBlocks._apply!(peps::PEPS{T}, block::ControlBlock{N,BT,1,1}) where {T,N,BT}
+    # forward to PutBlock.
+    YaoBlocks._apply!(peps, put(N, (block.ctrl_locs[1], block.locs[1])=>control(2,1,2=>block.content)))
+end
+function YaoBlocks._apply!(peps::PEPS{T}, block::Scale) where T
+    rmul!(YaoBlocks._apply!(peps, content(block)), Yao.factor(block))
+end
+# compute the expectation value of a Hamiltonian
+#
+# ●----●----●----●   ← ⟨peps|
+# ┆    ┆    ┆    ┆
+# ■    ■    ■    ■   ← (product operator)
+# ┆    ┆    ┆    ┆
+# ●----●----●----●   ← |peps⟩
+function Yao.expect(operator::Add, pa::PEPS{T}, pb::PEPS{T}) where T
+    res = 0.0im
+    for term in Yao.subblocks(operator)
+        res += expect(term, pa, pb)
+    end
+    return res
+end
+function Yao.expect(operator::AbstractBlock, pa::PEPS{T}, pb::PEPS{T}) where {T}
+    inner_product(pa, apply(pb, operator))
 end
