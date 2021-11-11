@@ -20,13 +20,15 @@ abstract type PEPS{T,LT} <:AbstractRegister{1} end
 
 `α`, `β` and `γ` are virtual labels.
 `a`, `b`, `c` and `d` are physical labels.
-`aα`, `αbβ`, `βcγ` and `γd` are tensor labels.
+`aα`, `αbβ`, `βcγ` and `γd` are vertex (tensor) labels.
 
-* `physical_labels` is a vector of unique physical labels
-* `virtual_labels` is a vector if unique virtual labels
+It has fields
 
-* `vertex_labels` is a vector of vectors, each vector is a labels for tensors.
-* `vertex_tensors` is a vector of tensors on vertices.
+* `physical_labels` is a vector of unique physical labels, should be a vector of integers.
+* `virtual_labels` is a vector if unique virtual labels, should be a vector of integer 2-tuples.
+
+* `vertex_labels` is a vector of vectors, i-th vector is the labels for i-th vertex tensor.
+* `vertex_tensors` is a vector of tensors defined on vertices.
 * `max_index` is the maximum index, used for creating new labels.
 
 * `code_statetensor` is the optimized contraction code for obtaining state vector.
