@@ -57,6 +57,9 @@ end
     @test !(statevec(P) ≈ statevec(peps))
     load_variables!(peps, vars)
     @test statevec(P) ≈ statevec(peps)
+    peps2 = randn!(peps)
+    peps2 = load_variables(peps2, vars)
+    @test statevec(P) ≈ statevec(peps2)
 end
 
 @testset "inner product and normalize" begin

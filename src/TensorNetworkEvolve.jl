@@ -12,5 +12,6 @@ using OMEinsumContractionOrders
 
 include("peps.jl")
 include("tebd.jl")
+include("timeevolve.jl")
 
 end
