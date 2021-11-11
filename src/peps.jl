@@ -50,10 +50,10 @@ function Base.conj(peps::SimplePEPS)
     )
 end
 
-function inner_product(p1::PEPS, p2::PEPS)
+function inner_product(p1::PEPS{T,LT}, p2::PEPS{T,LT}) where {T,LT}
     p1c = conj(p1)
     rep = [l=>newlabel(p1, i) for (i, l) in enumerate(p2.virtual_labels)]
-    code = EinCode((Tuple.(alllabels(p1c))..., [(replace(l, rep...)...,) for l in alllabels(p2)]...), ())
+    code = EinCode([alllabels(p1c)..., [replace(l, rep...) for l in alllabels(p2)]...], LT[])
     _contract(code, (alltensors(p1c)..., alltensors(p2)...))[]
 end
 
@@ -178,7 +178,7 @@ end
 # NOTE: maybe we should have a register type.
 Yao.nqubits(peps::PEPS) = length(peps.physical_labels)
 function Yao.state(peps::PEPS; kwargs...)
-    code = EinCode((Tuple.(alllabels(peps))...,), Tuple(peps.physical_labels))
+    code = EinCode(alllabels(peps), peps.physical_labels)
     _contract(code, alltensors(peps); kwargs...)
 end
 function _contract(code::EinCode, tensors; kwargs...)
@@ -199,9 +199,9 @@ end
 function apply_onsite!(peps::PEPS{T,LT}, i, mat::AbstractMatrix) where {T,LT}
     @assert size(mat, 1) == size(mat, 2)
     ti = peps.vertex_tensors[i]
-    old = (getvlabel(peps, i)...,)
-    mlabel = (newlabel(peps, 1), getphysicallabel(peps, i))
-    peps.vertex_tensors[i] = EinCode((old, mlabel), replace(old, mlabel[2]=>mlabel[1]))(ti, mat)
+    old = getvlabel(peps, i)
+    mlabel = [newlabel(peps, 1), getphysicallabel(peps, i)]
+    peps.vertex_tensors[i] = EinCode([old, mlabel], replace(old, mlabel[2]=>mlabel[1]))(ti, mat)
     return peps
 end
 
@@ -210,7 +210,7 @@ function apply_onbond!(peps::PEPS, i, j, mat::AbstractArray{T,4}) where T
     li, lj = getvlabel(peps, i), getvlabel(peps, j)
     shared_label = li ∩ lj; @assert length(shared_label) == 1
     only_left, only_right = setdiff(li, lj), setdiff(lj, li)
-    lij = ((only_left ∪ only_right)...,)
+    lij = only_left ∪ only_right
 
     if peps isa VidalPEPS
         # multiple S tensors
@@ -225,10 +225,10 @@ function apply_onbond!(peps::PEPS, i, j, mat::AbstractArray{T,4}) where T
     end
 
     # contract
-    tij = EinCode(((li...,), (lj...,)), (lij...,))(ti, tj)
-    lijkl = (newlabel(peps, 1), newlabel(peps, 2), getphysicallabel(peps, i), getphysicallabel(peps, j))
+    tij = EinCode([li, lj], lij)(ti, tj)
+    lijkl = [newlabel(peps, 1), newlabel(peps, 2), getphysicallabel(peps, i), getphysicallabel(peps, j)]
     lkl = replace(lij, lijkl[3]=>lijkl[1], lijkl[4]=>lijkl[2])
-    tkl = EinCode(((lij...,), lijkl), (lkl...,))(tij, mat)
+    tkl = EinCode([lij, lijkl], lkl)(tij, mat)
 
     # SVD and truncate
     sl = [size(ti, findall(==(l), li)[]) for l in only_left]
@@ -244,8 +244,8 @@ function apply_onbond!(peps::PEPS, i, j, mat::AbstractArray{T,4}) where T
         Vt = Vt[:,1:D]
     end
     # reshape back
-    ti_ = EinCode(((only_left..., shared_label[]),), (li...,))(reshape(U, (sl..., size(U,2))))
-    tj_ = EinCode(((only_right..., shared_label[]),), (lj...,))(reshape(Vt, (sr..., size(Vt,2))))
+    ti_ = EinCode([[only_left..., shared_label[]]], li)(reshape(U, (sl..., size(U,2))))
+    tj_ = EinCode([[only_right..., shared_label[]]], lj)(reshape(Vt, (sr..., size(Vt,2))))
     
     if peps isa VidalPEPS
         # devide S tensors
@@ -281,7 +281,7 @@ function safe_inv(y::T) where T
 end
 
 function _apply_vec(t, l, v, b)
-    return EinCode(((l...,), (b,)), (l...,))(t, v)
+    return EinCode([l, [b]], l)(t, v)
 end
 
 # compute the expectation value of a Hamiltonian
