@@ -1,5 +1,5 @@
 using TensorNetworkEvolve, Random, Test
-using LightGraphs
+using Graphs
 
 @testset "sr" begin
     function rand_hamiltonian(g::SimpleGraph)

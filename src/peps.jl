@@ -54,7 +54,7 @@ function inner_product(p1::PEPS{T,LT}, p2::PEPS{T,LT}) where {T,LT}
     p1c = conj(p1)
     rep = [l=>newlabel(p1, i) for (i, l) in enumerate(p2.virtual_labels)]
     code = EinCode([alllabels(p1c)..., [replace(l, rep...) for l in alllabels(p2)]...], LT[])
-    _contract(code, (alltensors(p1c)..., alltensors(p2)...))[]
+    direct_contract(code, (alltensors(p1c)..., alltensors(p2)...))[]
 end
 
 """
@@ -174,17 +174,19 @@ function LinearAlgebra.normalize!(peps::PEPS)
     return peps
 end
 
+# contractor, the not cached version.
+function direct_contract(code::EinCode, tensors; kwargs...)
+    size_dict = OMEinsum.get_size_dict(OMEinsum.getixs(code), tensors)
+    optcode = optimize_code(code, size_dict, GreedyMethod())
+    optcode(tensors...)
+end
+
 #### Circuit interfaces ####
-# NOTE: maybe we should have a register type.
+# NOTE: we should have a register type.
 Yao.nqubits(peps::PEPS) = length(peps.physical_labels)
 function Yao.state(peps::PEPS; kwargs...)
     code = EinCode(alllabels(peps), peps.physical_labels)
-    _contract(code, alltensors(peps); kwargs...)
-end
-function _contract(code::EinCode, tensors; kwargs...)
-    size_dict = OMEinsum.get_size_dict(OMEinsum.getixs(code), tensors)
-    optcode = optimize_greedy(code, size_dict)
-    optcode(tensors...)
+    direct_contract(code, alltensors(peps); kwargs...)
 end
 Yao.statevec(peps::PEPS) = vec(state(peps))
 function YaoBlocks._apply!(peps::PEPS, block::PutBlock{N,1}) where N
@@ -196,6 +198,21 @@ end
 function YaoBlocks._apply!(peps::PEPS, block::ControlBlock{N,BT,1,1}) where {N,BT}
     apply_onbond!(peps, block.locs..., block.content)
 end
+# compute the expectation value of a Hamiltonian
+function Yao.expect(operator::Add, pa::PEPS{T}, pb::PEPS{T}) where T
+    res = 0.0im
+    for term in Yao.subblocks(operator)
+        res += expect(term, pa, pb)
+    end
+    return res
+end
+function Yao.expect(operator::PutBlock{N,1}, pa::PEPS{T}, pb::PEPS{T}) where {N, T}
+    inner_product(pa, apply_onsite!(copy(pb), operator.locs[1], Matrix{T}(operator.content)))
+end
+function Yao.expect(operator::PutBlock{N,2}, pa::PEPS{T}, pb::PEPS{T}) where {N, T}
+    inner_product(pa, apply_onbond!(copy(pb), operator.locs..., reshape(Matrix{T}(operator.content), 2, 2, 2, 2)))
+end
+
 function apply_onsite!(peps::PEPS{T,LT}, i, mat::AbstractMatrix) where {T,LT}
     @assert size(mat, 1) == size(mat, 2)
     ti = peps.vertex_tensors[i]
@@ -282,19 +299,4 @@ end
 
 function _apply_vec(t, l, v, b)
     return EinCode([l, [b]], l)(t, v)
-end
-
-# compute the expectation value of a Hamiltonian
-function Yao.expect(operator::Add, pa::PEPS{T}, pb::PEPS{T}) where T
-    res = 0.0im
-    for term in Yao.subblocks(operator)
-        res += expect(term, pa, pb)
-    end
-    return res
-end
-function Yao.expect(operator::PutBlock{N,1}, pa::PEPS{T}, pb::PEPS{T}) where {N, T}
-    inner_product(pa, apply_onsite!(copy(pb), operator.locs[1], Matrix{T}(operator.content)))
-end
-function Yao.expect(operator::PutBlock{N,2}, pa::PEPS{T}, pb::PEPS{T}) where {N, T}
-    inner_product(pa, apply_onbond!(copy(pb), operator.locs..., reshape(Matrix{T}(operator.content), 2, 2, 2, 2)))
 end

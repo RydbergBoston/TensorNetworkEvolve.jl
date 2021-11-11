@@ -1,4 +1,4 @@
-using RydbergEmulator, TensorNetworkEvolve, Yao, LightGraphs
+using TensorNetworkEvolve, Yao, Graphs
 using LinearAlgebra, Test
 
 @testset "random gate" begin

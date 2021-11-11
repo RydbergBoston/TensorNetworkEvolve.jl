@@ -2,12 +2,13 @@ module TensorNetworkEvolve
 
 using OMEinsum
 using Yao
-using LightGraphs
+using Graphs
 using Yao.ConstGate: P1
 using LinearAlgebra: svd
-using LightGraphs: SimpleEdge
+using Graphs: SimpleEdge
 using Random
 using Yao: YaoBlocks
+using OMEinsumContractionOrders
 
 include("peps.jl")
 include("tebd.jl")

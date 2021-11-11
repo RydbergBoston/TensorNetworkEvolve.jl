@@ -1,4 +1,4 @@
-using Test, Random, TensorNetworkEvolve, LightGraphs, Yao
+using Test, Random, TensorNetworkEvolve, Graphs, Yao
 using LinearAlgebra
 
 @testset "initial state" begin
