@@ -184,6 +184,11 @@ end
 #### Circuit interfaces ####
 # NOTE: we should have a register type.
 Yao.nqubits(peps::PEPS) = length(peps.physical_labels)
+
+# contract the peps and obtain the state
+#
+# ┆    ┆    ┆    ┆
+# ●----●----●----●   ← |peps⟩
 function Yao.state(peps::PEPS; kwargs...)
     code = EinCode(alllabels(peps), peps.physical_labels)
     direct_contract(code, alltensors(peps); kwargs...)
@@ -199,6 +204,12 @@ function YaoBlocks._apply!(peps::PEPS, block::ControlBlock{N,BT,1,1}) where {N,B
     apply_onbond!(peps, block.locs..., block.content)
 end
 # compute the expectation value of a Hamiltonian
+#
+# ●----●----●----●   ← ⟨peps|
+# ┆    ┆    ┆    ┆
+# ┆    ■----■  ← (operator)
+# ┆    ┆    ┆    ┆
+# ●----●----●----●   ← |peps⟩
 function Yao.expect(operator::Add, pa::PEPS{T}, pb::PEPS{T}) where T
     res = 0.0im
     for term in Yao.subblocks(operator)
@@ -213,6 +224,11 @@ function Yao.expect(operator::PutBlock{N,2}, pa::PEPS{T}, pb::PEPS{T}) where {N,
     inner_product(pa, apply_onbond!(copy(pb), operator.locs..., reshape(Matrix{T}(operator.content), 2, 2, 2, 2)))
 end
 
+# apply a single site operator
+#      ┆
+#      ■  ← (operator)
+# ┆    ┆    ┆    ┆
+# ●----●----●----●   ← |peps⟩
 function apply_onsite!(peps::PEPS{T,LT}, i, mat::AbstractMatrix) where {T,LT}
     @assert size(mat, 1) == size(mat, 2)
     ti = peps.vertex_tensors[i]
@@ -222,6 +238,11 @@ function apply_onsite!(peps::PEPS{T,LT}, i, mat::AbstractMatrix) where {T,LT}
     return peps
 end
 
+# apply a two site operator
+#      ┆    ┆
+#      ■----■  ← (operator)
+# ┆    ┆    ┆    ┆
+# ●----●----●----●    ← |peps⟩
 function apply_onbond!(peps::PEPS, i, j, mat::AbstractArray{T,4}) where T
     ti, tj = peps.vertex_tensors[i], peps.vertex_tensors[j]
     li, lj = getvlabel(peps, i), getvlabel(peps, j)
