@@ -1,0 +1,132 @@
+\documentclass{article}
+\usepackage[colorlinks=true,urlcolor=blue,citecolor=blue,linkcolor=blue]{hyperref} 
+
+\usepackage{tikz}
+\usepackage{amsmath}
+\usepackage{multirow}
+\usepackage[linesnumbered, ruled, vlined]{algorithm2e}
+\usepackage{graphicx}% Include figure files
+\usepackage{subcaption}
+\usepackage{tabularx}
+\usepackage{listings}
+\usepackage{amsthm}
+\usepackage{cancel}
+\usetikzlibrary{shapes}
+\usetikzlibrary{shapes.geometric}
+\usetikzlibrary{positioning}
+\usetikzlibrary{snakes}
+\usepackage[mode=buildnew]{standalone}
+\makeatletter
+\def\parsept#1#2#3{%
+    \def\nospace##1{\zap@space##1 \@empty}%
+    \def\rawparsept(##1,##2){%
+        \edef#1{\nospace{##1}}%
+        \edef#2{\nospace{##2}}%
+    }%
+    \expandafter\rawparsept#3%
+}
+\makeatother
+\theoremstyle{definition}
+\newtheorem{definition}{Definition}[section]
+\newtheorem{theorem}{Theorem}[section]
+\newtheorem{corollary}{Corollary}[section]
+%\usepackage[linesnumbered, ruled, vlined, algo2e]{algorithm2e}
+\lstset{
+    basicstyle=\ttfamily\small,
+    numberstyle=\scriptsize,
+    % numbers=left,
+    backgroundcolor=\color{white},
+    %backgroundcolor=\color{white},
+    %frame=single,
+    xleftmargin=2em,
+    tabsize=2,
+    rulecolor=\color{black},
+    %title=\lstname,
+    escapeinside={(*}{*)},
+    breaklines=true,
+    %breakatwhitespace=true,
+    %framextopmargin=2pt,
+    %framexbottommargin=2pt,
+    frame=bt,
+    extendedchars=true,
+    inputencoding=utf8,
+    columns=fullflexible,
+    %escapeinside={(*@}{@*)},
+}
+
+% the color of power ragers
+\newcommand{\blue}[1]{[{\bf  \color{blue}{JG: #1}}]}
+\newcommand{\red}[1]{[{\bf  \color{red}{MD: #1}}]}
+\newcommand{\yellow}[1]{[{\bf  \color{yellow}{RG: #1}}]}
+\newcommand{\Eq}[1]{Eq.~(\ref{#1})}
+\newcommand{\Fig}[1]{Fig.~\ref{#1}}
+\newcommand{\ra}[1]{\renewcommand{\arraystretch}{#1}}
+\newcommand{\pdv}[2]{{\frac{\partial#1}{\partial#2}}}
+\newcommand\given[1][]{\:#1\vert\:}
+\def\unitdisk#1#2#3#4{
+\begin{scope}[shift={#1}]
+    \draw [fill=black] (0, 0) coordinate (#2) circle (0.1cm) node[#3] {#4};
+    \draw [thick](0,0) circle (1cm);
+\end{scope}
+}
+
+\title{Quantum simulation on a random tensor network}
+\begin{document}
+\maketitle
+\blue{This is how you make a comment. Hi}
+\red{Hi}, \yellow{Hi}.
+
+\section{The Dirac-Frenkel's variational principle}
+We have a Hamiltonian for a quantum system with $K$ terms.
+\begin{equation}
+    H  = \sum_{k=1}^{K} \prod_{i=1}^{n} o_i^k
+\end{equation}
+where $n$ is the system size and $o_i^k$ is a local operator on site $i$. We can see each term is a product of local operators.
+Let $\psi(\theta)$ be the ansatz of wave functions, to obtain the dynamics of the parameters.
+We treat $x \equiv \pdv{\theta}{t}$ as the variational parameters, and set the goal is to minimize~\cite{Broeckhove1988}
+\begin{equation}
+\mathcal{L} = \left\|i\pdv{\psi}{\theta}x-H\psi\right\|^2.
+\end{equation}
+At the extrema, we have $\pdv{\mathcal{L}}{x} = 0$. That is
+\begin{align}
+0 & = (-i\pdv{\psi^*}{\theta})(i\pdv{\psi}{\theta}x-H\psi) + (-ia\pdv{\psi^*}{\theta}-\psi^*H)(i\pdv{\psi}{\theta})\\
+& = \pdv{\psi^*}{\theta}\pdv{\psi}{\theta}x+i\pdv{\psi^*}{\theta}H\psi + x\pdv{\psi^*}{\theta}\pdv{\psi}{\theta}- i\psi^*H\pdv{\psi}{\theta}
+\end{align}
+
+Finally, we arrive at the Dirac-Frenkel's variational principle by taking the first two terms
+\blue{Because the wave function is analytic complex valued function, when the real parts of two functions are the same, their complex components are the same too.}
+\begin{equation}
+\pdv{\psi^*}{\theta}\pdv{\psi}{\theta}x = -i\pdv{\psi^*}{\theta}H\psi
+\end{equation}
+
+\blue{In tensor network representation, we can normalize tensor networks easily, so we do not need to go to the unnormalized prepresentation.}
+
+\subsection{The automatic differentiation approach}
+
+The first term can be computed as
+\begin{align}
+    \begin{split}
+        &\mathcal{L}_1(\theta, \theta') = \psi(\theta)^*\psi(\theta'),\\
+        &\mathcal{G}_1(\theta) = \pdv{\mathcal{L}_1(\theta, \theta')}{\theta'}x,\\
+        &\pdv{\psi^*}{\theta}\pdv{\psi}{\theta}x = \pdv{\mathcal{G}_1(\theta)}{\theta} \given[\Big]_{\theta =\theta'}
+    \end{split}\label{eq:ad1}
+\end{align}
+where $\psi(\theta) = \texttt{normalize}(\texttt{tensornetwork}(\theta))$.
+The second term can be computed as
+\begin{align}
+    \begin{split}
+        &\mathcal{L}_2(\theta) = -i\psi(\theta)^*H\psi\\
+        &-i\pdv{\psi^*}{\theta}H\psi = \pdv{\mathcal{L}_2(\theta)}{\theta}
+    \end{split}\label{eq:ad2}
+\end{align}
+
+\subsection{Time and space complexity}
+Let us denote the time complexity of contracting the overlap $\psi^*\psi$ as $1$.
+\Eq{eq:ad1} can be evaluated by reverse differentiating first order gradient program $G_1$.
+Obtaining the gradient of the program through back propagation only introduces a constant overhead, and let us denote this constant as $c$. Then the overhead of obtaining the Hessian is $c^2$.
+The time to evaluate expectation values of all terms in the Hamiltonian in \Eq{eq:ad2} is $K$.
+Hence the overall time overhead is $K+c^2$. The space overhead is propotional to the size of intermediate contraction results of tensor networks, which is dominated by the largest tensors.
+
+\bibliographystyle{plain}
+\bibliography{refs}
+\end{document}

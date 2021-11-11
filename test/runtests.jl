@@ -1,6 +1,10 @@
 using TensorNetworkEvolve
 using Test
 
-@testset "TensorNetworkEvolve.jl" begin
-    # Write your tests here.
+@testset "peps.jl" begin
+    include("peps.jl")
+end
+
+@testset "tebd.jl" begin
+    include("tebd.jl")
 end
