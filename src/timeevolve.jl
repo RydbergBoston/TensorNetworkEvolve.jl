@@ -31,7 +31,14 @@ function iloss2(h, peps, variables)
 end
 function fvec(peps::PEPS, h)
     variables = TensorNetworkEvolve.variables(peps)
-    return gradient(x->iloss2(h, peps, x), variables)
+    return -im*gradient(x->iloss2(h, peps, x), variables)[1]
 end
 
 @non_differentiable OMEinsum.optimize_greedy(code, size_dict)
+@non_differentiable replace(vec, pairs...)
+
+# zygote patch
+using Zygote
+function Zygote.accum(x::Vector, y::Tuple)
+    Zygote.accum.(x, y)
+end
