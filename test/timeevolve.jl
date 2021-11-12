@@ -1,5 +1,6 @@
 using TensorNetworkEvolve, Random, Test
 using Graphs, Yao, ForwardDiff
+using Zygote
 
 @testset "sr" begin
     function rand_hamiltonian(g::SimpleGraph)

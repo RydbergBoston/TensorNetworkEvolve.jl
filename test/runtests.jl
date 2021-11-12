@@ -8,3 +8,7 @@ end
 @testset "tebd.jl" begin
     include("tebd.jl")
 end
+
+@testset "timeevolve.jl" begin
+    include("timeevolve.jl")
+end

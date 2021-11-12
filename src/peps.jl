@@ -396,13 +396,10 @@ end
 Yao.nqubits(peps::PEPS) = nsite(peps)
 Yao.nactive(peps::PEPS) = nsite(peps)
 Yao.statevec(peps::PEPS) = vec(peps)
-for (APPLY, APPLY_ONSITE, APPLY_ONBOND, MUL) in [(:_apply!, :apply_onsite!, :apply_onbond!, :mul!),
-        (:apply, :apply_onsite, :apply_onsite!, :*)]
+for (APPLY, APPLY_ONSITE, MUL) in [(:_apply!, :apply_onsite!, :mul!),
+        (:apply, :apply_onsite, :*)]
     @eval function YaoBlocks.$APPLY(peps::PEPS{T}, block::PutBlock{N,1}) where {T,N}
         $APPLY_ONSITE(peps, block.locs[1], Matrix{T}(block.content))
-    end
-    @eval function YaoBlocks.$APPLY(peps::PEPS{T}, block::PutBlock{N,2}) where {T,N}
-        $APPLY_ONBOND(peps, block.locs..., reshape(Matrix{T}(block.content), 2, 2, 2, 2))
     end
     @eval function YaoBlocks.$APPLY(peps::PEPS{T}, block::KronBlock{N,M,BT}) where {T,N,M,BT<:NTuple{M,AbstractBlock{1}}}
         for (loc, g) in zip(block.locs, subblocks(block))
@@ -418,6 +415,11 @@ for (APPLY, APPLY_ONSITE, APPLY_ONBOND, MUL) in [(:_apply!, :apply_onsite!, :app
         $MUL(YaoBlocks.$APPLY(peps, content(block)), (1.0+0im)*Yao.factor(block))
     end
 end
+# no non-inplace version defined.
+function YaoBlocks._apply!(peps::PEPS{T}, block::PutBlock{N,2}) where {T,N}
+    apply_onbond!(peps, block.locs..., reshape(Matrix{T}(block.content), 2, 2, 2, 2))
+end
+
 # compute the expectation value of a Hamiltonian
 #
 # ●----●----●----●   ← ⟨peps|
