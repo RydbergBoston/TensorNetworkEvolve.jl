@@ -1,7 +1,7 @@
 export PEPS, VidalPEPS, SimplePEPS, zero_vidalpeps, zero_simplepeps, rand_simplepeps, rand_vidalpeps
 export state, statevec, getvlabel, getphysicallabel, newlabel, findbondtensor, virtualbonds
 export apply_onbond!, apply_onsite!, inner_product, norm, normalize!
-export variables, load_variables!
+export variables, load_variables!, load_variables
 using LinearAlgebra
 using OMEinsumContractionOrders: CodeOptimizer, CodeSimplifier
 using OMEinsum: DynamicEinCode, NestedEinsum
@@ -84,23 +84,14 @@ alltensors(s::SimplePEPS) = s.vertex_tensors
 Base.copy(peps::SimplePEPS) = SimplePEPS(copy(peps.physical_labels), copy(peps.virtual_labels),
     copy(peps.vertex_labels), copy(peps.vertex_tensors), peps.max_index, 
     peps.code_statetensor, peps.code_inner_product, peps.nflavor, peps.Dmax, peps.ϵ)
-function Base.conj(peps::SimplePEPS)
-    SimplePEPS(peps.physical_labels, peps.virtual_labels,
-        peps.vertex_labels, conj.(peps.vertex_tensors), peps.max_index,
-        peps.code_statetensor, peps.code_inner_product, peps.nflavor, peps.Dmax, peps.ϵ
-    )
-end
 
 # ●----●----●----●   ← ⟨peps1|
 # ┆    ┆    ┆    ┆
 # ●----●----●----●   ← |peps2⟩
-function inner_product(p1::PEPS{T,LT}, p2::PEPS{T,LT}) where {T,LT}
+function inner_product(p1::PEPS, p2::PEPS)
     p1c = conj(p1)
     # we assume `p1` and `p2` have the same structure and virtual bond dimension.
     p1.code_inner_product(alltensors(p1c)..., alltensors(p2)...)[]
-    #rep = [l=>newlabel(p1, i) for (i, l) in enumerate(p2.virtual_labels)]
-    #code = EinCode([alllabels(p1c)..., [replace(l, rep...) for l in alllabels(p2)]...], LT[])
-    #direct_contract(code, (alltensors(p1c)..., alltensors(p2)...))[]
 end
 
 """
@@ -152,11 +143,8 @@ findbondtensor(peps::VidalPEPS, b) = peps.bond_tensors[findall(==(b), peps.virtu
 Base.copy(peps::VidalPEPS) = VidalPEPS(copy(peps.physical_labels), copy(peps.virtual_labels),
     copy(peps.vertex_labels), copy(peps.virtual_tensors), copy(peps.bond_tensors), peps.max_index,
     peps.code_statetensor, peps.code_inner_product, peps.nflavor, peps.Dmax, peps.ϵ)
-function Base.conj(peps::VidalPEPS)
-    VidalPEPS(peps.physical_labels, peps.virtual_labels,
-        peps.vertex_labels, conj.(peps.vertex_tensors), conj.(peps.bond_tensors), peps.max_index,
-        peps.code_statetensor, peps.code_inner_product, peps.nflavor, peps.Dmax, peps.ϵ
-    )
+function Base.conj(peps::PEPS)
+    replace_tensors(peps, conj.(alltensors(peps)))
 end
 
 # label APIs
@@ -185,6 +173,29 @@ function load_variables!(peps::PEPS, variables)
         k += length(t)
     end
     return peps
+end
+function load_variables(peps::SimplePEPS, variables)  # for AD
+    ats = alltensors(peps)
+    ks = cumsum(length.(ats))
+    tensors = map(1:length(ats)) do i
+        t = ats[i]
+        reshape(variables[(i>1 ? ks[i-1] : 0)+1:ks[i]], size(t))
+    end
+    return replace_tensors(peps, tensors)
+end
+
+function replace_tensors(peps::SimplePEPS, tensors)
+    SimplePEPS(peps.physical_labels, peps.virtual_labels,
+        peps.vertex_labels, tensors, peps.max_index,
+        peps.code_statetensor, peps.code_inner_product, peps.nflavor, peps.Dmax, peps.ϵ
+    )
+end
+function replace_tensors(peps::VidalPEPS, tensors)
+    nv = nsite(peps)
+    VidalPEPS(peps.physical_labels, peps.virtual_labels,
+        peps.vertex_labels, tensors[1:nv], typeof(tensors[nv+1])[tensors[nv+1:end]...], peps.max_index,
+        peps.code_statetensor, peps.code_inner_product, peps.nflavor, peps.Dmax, peps.ϵ
+    )
 end
 
 function Base.show(io::IO, ::MIME"text/plain", peps::PEPS)
@@ -238,6 +249,11 @@ function LinearAlgebra.rmul!(peps::PEPS, c::Number)
     peps.vertex_tensors .*= c^(1/nsite(peps))
     return peps
 end
+Base.:*(c::Number, peps::PEPS) = peps * c
+function Base.:*(peps::PEPS, c::Number)   # to support AD
+    tensors = peps.vertex_tensors .* c^(1/nsite(peps))
+    return replace_tensors(peps, tensors)
+end
 
 # norm of a peps
 #
@@ -264,8 +280,6 @@ end
 Base.vec(peps::PEPS) = vec(statetensor(peps))
 function statetensor(peps::PEPS)
     peps.code_statetensor(alltensors(peps)...)
-    #code = EinCode(alllabels(peps), peps.physical_labels)
-    #direct_contract(code, alltensors(peps))
 end
 
 # apply a single site operator
@@ -282,6 +296,17 @@ function apply_onsite!(peps::PEPS{T,LT}, i, mat::AbstractMatrix) where {T,LT}
     return peps
 end
 
+function apply_onsite(peps::PEPS{T,LT}, i, mat::AbstractMatrix) where {T,LT}  # to support AD
+    @assert size(mat, 1) == size(mat, 2)
+    ti = peps.vertex_tensors[i]
+    old = getvlabel(peps, i)
+    mlabel = [newlabel(peps, 1), getphysicallabel(peps, i)]
+    tensors = map(1:length(peps.vertex_tensors)) do j
+        tj = peps.vertex_tensors[j]
+        j == i ? EinCode([old, mlabel], replace(old, mlabel[2]=>mlabel[1]))(tj, mat) : tj
+    end
+    return replace_tensors(peps, tensors)
+end
 # apply a two site operator
 #      ┆    ┆
 #      ■----■  ← (operator)
@@ -371,25 +396,30 @@ end
 Yao.nqubits(peps::PEPS) = nsite(peps)
 Yao.nactive(peps::PEPS) = nsite(peps)
 Yao.statevec(peps::PEPS) = vec(peps)
-function YaoBlocks._apply!(peps::PEPS{T}, block::PutBlock{N,1}) where {T,N}
-    apply_onsite!(peps, block.locs[1], Matrix{T}(block.content))
+for (APPLY, APPLY_ONSITE, MUL) in [(:_apply!, :apply_onsite!, :mul!),
+        (:apply, :apply_onsite, :*)]
+    @eval function YaoBlocks.$APPLY(peps::PEPS{T}, block::PutBlock{N,1}) where {T,N}
+        $APPLY_ONSITE(peps, block.locs[1], Matrix{T}(block.content))
+    end
+    @eval function YaoBlocks.$APPLY(peps::PEPS{T}, block::KronBlock{N,M,BT}) where {T,N,M,BT<:NTuple{M,AbstractBlock{1}}}
+        for (loc, g) in zip(block.locs, subblocks(block))
+            peps = $APPLY_ONSITE(peps, loc[1], Matrix{T}(g))
+        end
+        return peps
+    end
+    @eval function YaoBlocks.$APPLY(peps::PEPS{T}, block::ControlBlock{N,BT,1,1}) where {T,N,BT}
+        # forward to PutBlock.
+        YaoBlocks.$APPLY(peps, put(N, (block.ctrl_locs[1], block.locs[1])=>control(2,1,2=>block.content)))
+    end
+    @eval function YaoBlocks.$APPLY(peps::PEPS{T}, block::Scale) where T
+        $MUL(YaoBlocks.$APPLY(peps, content(block)), (1.0+0im)*Yao.factor(block))
+    end
 end
+# no non-inplace version defined.
 function YaoBlocks._apply!(peps::PEPS{T}, block::PutBlock{N,2}) where {T,N}
     apply_onbond!(peps, block.locs..., reshape(Matrix{T}(block.content), 2, 2, 2, 2))
 end
-function YaoBlocks._apply!(peps::PEPS{T}, block::KronBlock{N,M,BT}) where {T,N,M,BT<:NTuple{M,AbstractBlock{1}}}
-    for (loc, g) in zip(block.locs, subblocks(block))
-        apply_onsite!(peps, loc[1], Matrix{T}(g))
-    end
-    return peps
-end
-function YaoBlocks._apply!(peps::PEPS{T}, block::ControlBlock{N,BT,1,1}) where {T,N,BT}
-    # forward to PutBlock.
-    YaoBlocks._apply!(peps, put(N, (block.ctrl_locs[1], block.locs[1])=>control(2,1,2=>block.content)))
-end
-function YaoBlocks._apply!(peps::PEPS{T}, block::Scale) where T
-    rmul!(YaoBlocks._apply!(peps, content(block)), Yao.factor(block))
-end
+
 # compute the expectation value of a Hamiltonian
 #
 # ●----●----●----●   ← ⟨peps|
@@ -397,13 +427,13 @@ end
 # ■    ■    ■    ■   ← (product operator)
 # ┆    ┆    ┆    ┆
 # ●----●----●----●   ← |peps⟩
-function Yao.expect(operator::Add, pa::PEPS{T}, pb::PEPS{T}) where T
+function Yao.expect(operator::Add, pa::PEPS, pb::PEPS)
     res = 0.0im
     for term in Yao.subblocks(operator)
         res += expect(term, pa, pb)
     end
     return res
 end
-function Yao.expect(operator::AbstractBlock, pa::PEPS{T}, pb::PEPS{T}) where {T}
+function Yao.expect(operator::AbstractBlock, pa::PEPS, pb::PEPS)
     inner_product(pa, apply(pb, operator))
 end

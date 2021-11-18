@@ -12,9 +12,6 @@ function xterm(Ω::Real)
     return Ω/2*X
 end
 
-Yao.apply!(reg::PEPS, b::PutBlock{N,1}) where N = apply_onsite!(reg, b.locs[1], Matrix(b.content))
-Yao.apply!(reg::PEPS, b::PutBlock{N,2}) where N = apply_onbond!(reg, b.locs..., reshape(Matrix(b.content),2,2,2,2))
-
 function rydberg_tebd_sweep!(peps, g, C::Real, Δ::Real, Ω::Real, δt)
     for edge in edges(g)
         di = degree(g, edge.src)
