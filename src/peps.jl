@@ -391,6 +391,73 @@ function _apply_vec(t, l, v, b)
     return EinCode([l, [b]], l)(t, v)
 end
 
+
+
+"""
+VectorPEPS, and all its overloads
+"""
+# VectorPEPS
+struct VectorPEPS{T, LT<:Union{Int,Char}} <: PEPS{T,LT}
+    vec::Vector{T}
+    nsite::Int
+    nflavor::Int
+    ϵ::Float64
+end
+
+function nsite(peps::VectorPEPS)
+    return peps.nsite
+end
+
+function nflavor(peps::VectorPEPS)
+    return peps.nflavor
+end
+
+function vec(peps::VectorPEPS)
+    return peps.vec
+end
+
+function conj(peps::VectorPEPS)
+    p1c = VectorPEPS(peps.nsite, peps.nflavor, conj.(peps.vec), peps.ϵ)
+    return p1c
+function inner_product(p1::VectorPEPS, p2::VectorPEPS)
+    p1c = conj(p1)
+    return dot(p1c.vec, p2.vec)
+    # we assume `p1` and `p2` have the same structure
+end
+
+function apply_onbond!(peps::VectorPEPS, i, j, mat::AbstractArray{T,4}) where T
+    # modify peps.vec as it would be modified if you applied an operator T to i,j?
+    # think this can almost be handled as a YaoBlocks.KronBlock or PutBlock plus an application of T
+    # as a primitive Block. only uncertainty because of possible 'non-contiguous qubits'
+    return peps
+end
+function apply_onbond(peps::VectorPEPS, i, j)
+    # similar to above, but inplace/not inplace
+    return peps
+end
+function apply_onsite(peps::VectorPEPS, i)
+    # similar to above, but for single site
+    return
+end
+function apply_onsite!(peps::VectorPEPS, i)
+    # similar to above, but inplace/not inplace
+    return
+end
+
+function rmul!(peps::VectorPEPS, x)
+    # scalar multiplication
+    peps.vec .*= x
+    return peps
+end
+# also need to define *?
+function Base.:*(peps::VectorPEPS, c::Number)
+    peps.vec .*= c
+    return peps
+end
+
+
+
+
 #### Circuit interfaces ####
 # NOTE: we should have a register type.
 Yao.nqubits(peps::PEPS) = nsite(peps)
