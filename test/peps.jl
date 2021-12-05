@@ -1,4 +1,5 @@
 using Test, Random, TensorNetworkEvolve, Graphs, Yao
+using OMEinsumContractionOrders: TreeSA
 using LinearAlgebra
 
 @testset "initial state" begin
@@ -6,7 +7,7 @@ using LinearAlgebra
     for (i,j) in [(1,2), (1,3), (2,4), (2,5), (3,4), (3,5)]
         add_edge!(g, i, j)
     end
-    peps = zero_vidalpeps(ComplexF64, g, 2)
+    peps = zero_vidalpeps(ComplexF64, g, 2, optimizer=TreeSA(nslices=3))
     @test virtualbonds(peps) == [(1,2), (1,3), (2,4), (2,5), (3,4), (3,5)]
     @test vec(peps) ≈ (x=zeros(ComplexF64, 1<<5); x[1]=1; x)
     @test newlabel(peps, 2) == 11+2
