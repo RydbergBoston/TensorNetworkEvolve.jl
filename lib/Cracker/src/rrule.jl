@@ -2,8 +2,9 @@
 # so let's not generate them automatically for now, until we can handle
 # the function signatures better, e.g wrap tracked-types over supported
 # types of the rrule signatures automatically
-Base.getindex(A::TrackedArrayType, indices::Int...) = trace(getindex, A, indices)
-Base.reshape(A::TrackedArrayType, shape::Int...) = trace(reshape, A, shape)
+Base.getindex(A::TrackedArrayType, indices::Int...) = trace(getindex, A, indices...)
+Base.reshape(A::TrackedArrayType, shape::Int...) = trace(reshape, A, shape...)
+Base.reshape(A::TrackedArrayType, shape::NTuple{N, Int}) where N = trace(reshape, A, shape)
 Base.vect(X::Vararg{<:TrackedArrayType}) = trace(Base.vect, X)
 Base.hcat(Xs::TrackedArrayType...) = trace(Base.hcat, Xs...)
 
