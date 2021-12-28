@@ -1,0 +1,17 @@
+name = "Cracker"
+uuid = "82ef69be-a766-410a-9d05-ddb80c13a09d"
+authors = ["Roger-Luo <rogerluo.rl18@gmail.com> and contributors"]
+version = "0.1.0"
+
+[deps]
+ChainRules = "082447d4-558c-5d27-93f4-14fc19e9eca2"
+LinearAlgebra = "37e2e46d-f89d-539d-b4ee-838fcccc9c8e"
+
+[compat]
+julia = "1.7"
+
+[extras]
+Test = "8dfed614-e22c-5e08-85e1-65c5234f0b40"
+
+[targets]
+test = ["Test"]
