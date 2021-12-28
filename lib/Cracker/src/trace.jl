@@ -1,5 +1,7 @@
 function trace(f, args...)
-    ret, pullback = rrule(f, untrack.(args)...)
+    untracked_args = untrack.(args)
+    @debug "tracking `$f$((untracked_args...,)))`"
+    ret, pullback = rrule(f, untracked_args...)
     tracked = Record(f, args, pullback, zero(ret), false)
     return if ret isa AbstractArray
         TrackedArray(ret, tracked)
@@ -15,7 +17,9 @@ end
 accumulate_grad!(x::Number, grad) = x + grad
 accumulate_grad!(x::AbstractArray, grad) = (x .+= grad)
 
-function backpropagate!(tracked_value, grad)
+backpropagate!(tracked_value::Tuple, _grad) = backpropagate!.(tracked_value, ChainRules.unthunk(_grad))
+function backpropagate!(tracked_value, _grad)
+    grad = unthunk(_grad)
     is_tracked(tracked_value) || error("expect tracked value")
     record = tracked_value.record::Record
     record.grad = accumulate_grad!(record.grad, grad)
@@ -23,6 +27,7 @@ function backpropagate!(tracked_value, grad)
 
     # we won't have callable objects in our tape
     # since we always trace to TrackedType
+    @debug "back propagating `pullback$((record.f, untrack.(record.args)...))($grad)`"
     grad_args = Base.tail(record.pullback(record.grad))
     for (arg, grad_arg) in zip(record.args, grad_args)
         is_tracked(arg) && backpropagate!(arg, grad_arg)

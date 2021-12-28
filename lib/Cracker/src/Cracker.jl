@@ -1,6 +1,6 @@
 module Cracker
 
-using ChainRules: rrule
+using ChainRules: rrule, unthunk
 using LinearAlgebra
 
 export track, untrack
@@ -8,6 +8,12 @@ export track, untrack
 include("types/record.jl")
 include("types/number.jl")
 include("types/array.jl")
+
+is_tracked(x::Tuple) = any(is_tracked, x)
+untrack(x::Tuple) = untrack.(x)
+function track(A::Tuple, record::Record=leaf(A))
+    return track.(A, Ref(record))
+end
 
 const TrackedType = Union{TrackedNumber, TrackedArrayType}
 function Base.show(io::IO, x::TrackedType)
