@@ -12,7 +12,6 @@ include("types/array.jl")
 is_tracked(x::Tuple) = any(is_tracked, x)
 untrack(x::Tuple) = untrack.(x)
 function track(A::Tuple, record::Record=leaf(A))
-    @show record |> typeof
     return track.(A, Ref(record))
 end
 
