@@ -3,8 +3,9 @@ export state, statevec, getvlabel, getphysicallabel, newlabel, findbondtensor, v
 export apply_onbond!, apply_onsite!, inner_product, norm, normalize!
 export variables, load_variables!, load_variables
 using LinearAlgebra
-using OMEinsumContractionOrders: CodeOptimizer, CodeSimplifier
+using OMEinsumContractionOrders: CodeOptimizer, CodeSimplifier, SlicedEinsum
 using OMEinsum: DynamicEinCode, NestedEinsum
+const OrderedEinCode{LT} = Union{NestedEinsum{DynamicEinCode{LT}}, SlicedEinsum{LT,NestedEinsum{DynamicEinCode{LT}}}}
 
 # we implement the register interface because we want to use the operator system in Yao.
 abstract type PEPS{T,LT} <:AbstractRegister{1} end
@@ -38,7 +39,7 @@ It has fields
 * `Dmax` is the maximum virtual bond dimension.
 * `ϵ` is useful in compression (e.g. with SVD), to determine the cutoff precision.
 """
-struct SimplePEPS{T, LT<:Union{Int,Char}} <: PEPS{T,LT}
+struct SimplePEPS{T, LT<:Union{Int,Char},Ein<:OrderedEinCode} <: PEPS{T,LT}
     physical_labels::Vector{LT}
     virtual_labels::Vector{LT}
 
@@ -47,8 +48,8 @@ struct SimplePEPS{T, LT<:Union{Int,Char}} <: PEPS{T,LT}
     max_index::LT
 
     # optimized contraction codes
-    code_statetensor::NestedEinsum{DynamicEinCode{LT}}
-    code_inner_product::NestedEinsum{DynamicEinCode{LT}}
+    code_statetensor::Ein
+    code_inner_product::Ein
 
     nflavor::Int
     Dmax::Int
@@ -118,8 +119,8 @@ struct VidalPEPS{T, LT<:Union{Int,Char}} <: PEPS{T,LT}
     max_index::LT
 
     # optimized contraction codes
-    code_statetensor::NestedEinsum{DynamicEinCode{LT}}
-    code_inner_product::NestedEinsum{DynamicEinCode{LT}}
+    code_statetensor::OrderedEinCode{LT}
+    code_inner_product::OrderedEinCode{LT}
 
     nflavor::Int
     Dmax::Int
@@ -396,7 +397,7 @@ end
 """
 VectorPEPS, and all its overloads.
 """
-#=
+
 
 # VectorPEPS
 struct VectorPEPS{T, LT<:Union{Int,Char}} <: PEPS{T,LT}
@@ -414,11 +415,11 @@ function nflavor(peps::VectorPEPS)
     return peps.nflavor
 end
 
-function vec(peps::VectorPEPS)
+function Base.vec(peps::VectorPEPS)
     return peps.vec
 end
 
-function conj(peps::VectorPEPS)
+function Base.conj(peps::VectorPEPS)
     p1c = VectorPEPS(peps.nsite, peps.nflavor, conj.(peps.vec), peps.ϵ)
     return p1c
 end
@@ -428,7 +429,6 @@ function inner_product(p1::VectorPEPS, p2::VectorPEPS)
     p1c = conj(p1)
     return dot(p1c.vec, p2.vec)
 end
-
 
 function apply_onbond!(peps::VectorPEPS, i, j, mat::AbstractArray{T,4}) where T
     # Apply operator onto bond (pair of sites), not in place
@@ -451,7 +451,7 @@ function apply_onsite!(peps::VectorPEPS, i)
     return
 end
 
-function rmul!(peps::VectorPEPS, x)
+function LinearAlgebra.rmul!(peps::VectorPEPS, x)
     # Scalar multiplication of vector
     peps.vec .*= x
     return peps
@@ -462,7 +462,7 @@ function Base.:*(peps::VectorPEPS, c::Number)
     return peps
 end
 
-=#
+
 
 
 

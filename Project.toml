@@ -4,7 +4,7 @@ authors = ["GiggleLiu <cacate0129@gmail.com> and contributors"]
 version = "0.1.0"
 
 [deps]
-ForwardDiff = "f6369f11-7733-5829-9624-2563aa707210"
+Cracker = "82ef69be-a766-410a-9d05-ddb80c13a09d"
 Graphs = "86223c79-3864-5bf0-83f7-82e725a168b6"
 KrylovKit = "0b1a1467-8014-51b9-945f-bf0ae24f4b77"
 LinearAlgebra = "37e2e46d-f89d-539d-b4ee-838fcccc9c8e"
@@ -17,10 +17,11 @@ Yao = "5872b779-8223-5990-8dd0-5abbb0748c8c"
 Zygote = "e88e6eb3-aa80-5325-afca-941959d7151f"
 
 [compat]
+Cracker = "0.1"
 Graphs = "1.4"
 KrylovKit = "0.5"
 OMEinsum = "0.6"
-OMEinsumContractionOrders = "0.5"
+OMEinsumContractionOrders = "0.6"
 Yao = "0.6"
 Zygote = "0.6"
 julia = "1"
