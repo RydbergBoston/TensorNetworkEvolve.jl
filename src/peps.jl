@@ -8,10 +8,10 @@ using OMEinsum: DynamicEinCode, NestedEinsum
 const OrderedEinCode{LT} = Union{NestedEinsum{DynamicEinCode{LT}}, SlicedEinsum{LT,NestedEinsum{DynamicEinCode{LT}}}}
 
 # we implement the register interface because we want to use the operator system in Yao.
-abstract type PEPS{T,LT} <:AbstractRegister{1} end
+abstract type PEPS{T,NF,LT} <:AbstractRegister{NF} end
 
 """
-    SimplePEPS{T,LT}
+    SimplePEPS{T,NF,LT<:Union{Int,Char},Ein<:OrderedEinCode} <: PEPS{T,NF,LT}
 
  a     b     c     d
  ┆     ┆     ┆     ┆ ← size = nflavor
@@ -22,6 +22,8 @@ abstract type PEPS{T,LT} <:AbstractRegister{1} end
 `α`, `β` and `γ` are virtual labels.
 `a`, `b`, `c` and `d` are physical labels.
 `aα`, `αbβ`, `βcγ` and `γd` are vertex (tensor) labels.
+
+`NF` is the number of flavors, i.e. size of physical bonds. For spins, it is 2.
 
 It has fields
 
@@ -35,11 +37,10 @@ It has fields
 * `code_statetensor` is the optimized contraction code for obtaining state vector.
 * `code_inner_product` is the optimized contraction code for obtaining the overlap.
 
-* `nflavor` is the size of physical dimension. For spins, it is 2.
 * `Dmax` is the maximum virtual bond dimension.
 * `ϵ` is useful in compression (e.g. with SVD), to determine the cutoff precision.
 """
-struct SimplePEPS{T, LT<:Union{Int,Char},Ein<:OrderedEinCode} <: PEPS{T,LT}
+struct SimplePEPS{T,NF,LT<:Union{Int,Char},Ein<:OrderedEinCode} <: PEPS{T,NF,LT}
     physical_labels::Vector{LT}
     virtual_labels::Vector{LT}
 
@@ -51,20 +52,40 @@ struct SimplePEPS{T, LT<:Union{Int,Char},Ein<:OrderedEinCode} <: PEPS{T,LT}
     code_statetensor::Ein
     code_inner_product::Ein
 
-    nflavor::Int
     Dmax::Int
     ϵ::Float64
 end
 
-function SimplePEPS(vertex_labels::AbstractVector{<:AbstractVector{LT}}, vertex_tensors::Vector{<:AbstractArray{T}},
-        virtual_labels::AbstractVector{LT}, nflavor::Int, Dmax::Int, ϵ::Real, optimizer::CodeOptimizer, simplifier::CodeSimplifier) where {LT,T}
+function SimplePEPS{NF}(physical_labels::Vector{LT},
+    virtual_labels::Vector{LT},
+
+    vertex_labels::Vector{Vector{LT}},
+    vertex_tensors::Vector{<:AbstractArray{T}},
+    max_index::LT,
+
+    code_statetensor::Ein,
+    code_inner_product::Ein,
+
+    Dmax::Int,
+    ϵ::Float64
+    ) where {LT,T,NF,Ein}
+    SimplePEPS{T,NF,LT,Ein}(physical_labels, virtual_labels, vertex_labels, vertex_tensors, max_index,
+        code_statetensor, code_inner_product, Dmax, ϵ)
+end
+
+function SimplePEPS{NF}(vertex_labels::AbstractVector{<:AbstractVector{LT}}, vertex_tensors::Vector{<:AbstractArray{T}},
+        virtual_labels::AbstractVector{LT}, Dmax::Int, ϵ::Real, optimizer::CodeOptimizer, simplifier::CodeSimplifier) where {LT,T,NF}
     physical_labels = [vl[findall(∉(virtual_labels), vl)[]] for vl in vertex_labels]
+    # check dimension of input tensors
+    if !all(tv->all(tvi->(tvi[2] ∈ physical_labels ? tvi[1] == NF : tvi[1] <= Dmax), zip(size(tv[1]), tv[2])), zip(vertex_tensors,vertex_labels))
+        error("Input tensor shape error, either: \n 1. physical degrees of freedom do not match, \n 2. or input tensor virtual degrees of freedom larger than `Dmax = $(Dmax)`.")
+    end
     max_ind = max(maximum(physical_labels), maximum(virtual_labels))
     # optimal contraction orders
     optcode_statetensor, optcode_inner_product = _optimized_code(vertex_labels, physical_labels, virtual_labels,
-        max_ind, nflavor, Dmax, optimizer, simplifier)
-    SimplePEPS(physical_labels, virtual_labels, vertex_labels, vertex_tensors, max_ind,
-        optcode_statetensor, optcode_inner_product, nflavor, Dmax, ϵ)
+        max_ind, NF, Dmax, optimizer, simplifier)
+    SimplePEPS{NF}(physical_labels, virtual_labels, vertex_labels, vertex_tensors, max_ind,
+        optcode_statetensor, optcode_inner_product, Dmax, ϵ)
 end
 
 function _optimized_code(alllabels, physical_labels::AbstractVector{LT}, virtual_labels, max_ind, nflavor, D, optimizer, simplifier) where LT
@@ -82,9 +103,9 @@ end
 alllabels(s::SimplePEPS) = s.vertex_labels
 # all vertex tensors and bond tensors (if any)
 alltensors(s::SimplePEPS) = s.vertex_tensors
-Base.copy(peps::SimplePEPS) = SimplePEPS(copy(peps.physical_labels), copy(peps.virtual_labels),
+Base.copy(peps::SimplePEPS{T,NF}) where {T,NF} = SimplePEPS{NF}(copy(peps.physical_labels), copy(peps.virtual_labels),
     copy(peps.vertex_labels), copy(peps.vertex_tensors), peps.max_index, 
-    peps.code_statetensor, peps.code_inner_product, peps.nflavor, peps.Dmax, peps.ϵ)
+    peps.code_statetensor, peps.code_inner_product, peps.Dmax, peps.ϵ)
 
 # ●----●----●----●   ← ⟨peps1|
 # ┆    ┆    ┆    ┆
@@ -96,7 +117,7 @@ function inner_product(p1::PEPS, p2::PEPS)
 end
 
 """
-    VidalPEPS
+    VidalPEPS{T, NF, LT<:Union{Int,Char}} <: PEPS{T,NF,LT}
 
 Similar to `SimplePEPS` except it contains one extra field
 
@@ -108,7 +129,7 @@ Similar to `SimplePEPS` except it contains one extra field
 
 * `bond_tensors` is a vector of tensors on bonds.
 """
-struct VidalPEPS{T, LT<:Union{Int,Char}} <: PEPS{T,LT}
+struct VidalPEPS{T, NF, LT<:Union{Int,Char}, Ein<:OrderedEinCode} <: PEPS{T,NF,LT}
     physical_labels::Vector{LT}
     virtual_labels::Vector{LT}
 
@@ -119,31 +140,48 @@ struct VidalPEPS{T, LT<:Union{Int,Char}} <: PEPS{T,LT}
     max_index::LT
 
     # optimized contraction codes
-    code_statetensor::OrderedEinCode{LT}
-    code_inner_product::OrderedEinCode{LT}
+    code_statetensor::Ein
+    code_inner_product::Ein
 
-    nflavor::Int
     Dmax::Int
     ϵ::Float64
 end
-function VidalPEPS(vertex_labels::AbstractVector{<:AbstractVector{LT}}, vertex_tensors::Vector{<:AbstractArray{T}},
-        virtual_labels::AbstractVector{LT}, bond_tensors::Vector{<:AbstractVector}, nflavor::Int, Dmax::Int, ϵ::Real,
-        optimizer::CodeOptimizer, simplifier::CodeSimplifier) where {LT,T}
+function VidalPEPS{NF}(vertex_labels::AbstractVector{<:AbstractVector{LT}}, vertex_tensors::Vector{<:AbstractArray{T}},
+        virtual_labels::AbstractVector{LT}, bond_tensors::Vector{<:AbstractVector}, Dmax::Int, ϵ::Real,
+        optimizer::CodeOptimizer, simplifier::CodeSimplifier) where {LT,T,NF}
     physical_labels = [vl[findall(∉(virtual_labels), vl)[]] for vl in vertex_labels]
     max_ind = max(maximum(physical_labels), maximum(virtual_labels))
     optcode_statetensor, optcode_inner_product = _optimized_code([vertex_labels..., [[l] for l in virtual_labels]...],
-        physical_labels, virtual_labels, max_ind, nflavor, Dmax, optimizer, simplifier)
-    VidalPEPS(physical_labels, virtual_labels, vertex_labels, vertex_tensors, bond_tensors, max_ind,
-        optcode_statetensor, optcode_inner_product, nflavor, Dmax, ϵ)
+        physical_labels, virtual_labels, max_ind, NF, Dmax, optimizer, simplifier)
+    VidalPEPS{NF}(physical_labels, virtual_labels, vertex_labels, vertex_tensors, bond_tensors, max_ind,
+        optcode_statetensor, optcode_inner_product, Dmax, ϵ)
+end
+
+function VidalPEPS{NF}(physical_labels::Vector{LT},
+    virtual_labels::Vector{LT},
+
+    vertex_labels::Vector{Vector{LT}},
+    vertex_tensors::Vector{<:AbstractArray{T}},
+    bond_tensors::Vector{<:AbstractVector{T}},
+    max_index::LT,
+
+    code_statetensor::Ein,
+    code_inner_product::Ein,
+
+    Dmax::Int,
+    ϵ::Float64
+    ) where {LT,T,NF,Ein}
+    VidalPEPS{T,NF,LT,Ein}(physical_labels, virtual_labels, vertex_labels, vertex_tensors, bond_tensors, max_index,
+        code_statetensor, code_inner_product, Dmax, ϵ)
 end
 
 alllabels(peps::VidalPEPS) = [peps.vertex_labels..., [[l] for l in peps.virtual_labels]...]
 alltensors(peps::VidalPEPS) = [peps.vertex_tensors..., peps.bond_tensors...]
 # find bond tensor by virtual label
 findbondtensor(peps::VidalPEPS, b) = peps.bond_tensors[findall(==(b), peps.virtual_labels)[]]
-Base.copy(peps::VidalPEPS) = VidalPEPS(copy(peps.physical_labels), copy(peps.virtual_labels),
+Base.copy(peps::VidalPEPS{T,NF}) where {T,NF} = VidalPEPS{NF}(copy(peps.physical_labels), copy(peps.virtual_labels),
     copy(peps.vertex_labels), copy(peps.virtual_tensors), copy(peps.bond_tensors), peps.max_index,
-    peps.code_statetensor, peps.code_inner_product, peps.nflavor, peps.Dmax, peps.ϵ)
+    peps.code_statetensor, peps.code_inner_product, peps.Dmax, peps.ϵ)
 function Base.conj(peps::PEPS)
     replace_tensors(peps, conj.(alltensors(peps)))
 end
@@ -161,7 +199,7 @@ function virtualbonds(peps::PEPS)  # list all virtual bonds (a bond is a 2-tuple
     return bs
 end
 nsite(peps::PEPS) = length(peps.physical_labels)
-nflavor(peps::PEPS) = peps.nflavor
+nflavor(::PEPS{T,NF}) where NF = NF
 Dmax(peps::PEPS) = peps.Dmax
 
 # all variables by flattening the tensors
@@ -185,17 +223,17 @@ function load_variables(peps::SimplePEPS, variables)  # for AD
     return replace_tensors(peps, tensors)
 end
 
-function replace_tensors(peps::SimplePEPS, tensors)
-    SimplePEPS(peps.physical_labels, peps.virtual_labels,
+function replace_tensors(peps::SimplePEPS{T,NF}, tensors) where {T,NF}
+    SimplePEPS{NF}(peps.physical_labels, peps.virtual_labels,
         peps.vertex_labels, tensors, peps.max_index,
-        peps.code_statetensor, peps.code_inner_product, peps.nflavor, peps.Dmax, peps.ϵ
+        peps.code_statetensor, peps.code_inner_product, peps.Dmax, peps.ϵ
     )
 end
-function replace_tensors(peps::VidalPEPS, tensors)
+function replace_tensors(peps::VidalPEPS{T,NF}, tensors) where {T,NF}
     nv = nsite(peps)
-    VidalPEPS(peps.physical_labels, peps.virtual_labels,
+    VidalPEPS{NF}(peps.physical_labels, peps.virtual_labels,
         peps.vertex_labels, tensors[1:nv], typeof(tensors[nv+1])[tensors[nv+1:end]...], peps.max_index,
-        peps.code_statetensor, peps.code_inner_product, peps.nflavor, peps.Dmax, peps.ϵ
+        peps.code_statetensor, peps.code_inner_product, peps.Dmax, peps.ϵ
     )
 end
 
@@ -226,17 +264,17 @@ function _peps_zero_state(::Val{TYPE}, ::Type{T}, g::SimpleGraph, D::Int, nflavo
     end
     if TYPE === :Vidal
         bond_tensors = [ones(T, D) for _=1:ne(g)]
-        return VidalPEPS(vertex_labels, vertex_tensors, virtual_labels, bond_tensors, nflavor, Dmax, ϵ, optimizer, simplifier)
+        return VidalPEPS{nflavor}(vertex_labels, vertex_tensors, virtual_labels, bond_tensors, Dmax, ϵ, optimizer, simplifier)
     else
-        return SimplePEPS(vertex_labels, vertex_tensors, virtual_labels, nflavor, Dmax, ϵ, optimizer, simplifier)
+        return SimplePEPS{nflavor}(vertex_labels, vertex_tensors, virtual_labels, Dmax, ϵ, optimizer, simplifier)
     end
 end
 
 function rand_vidalpeps(::Type{T}, g::SimpleGraph, D::Int; nflavor::Int=2, optimizer=GreedyMethod(), simplifier=MergeGreedy(), Dmax::Int=D, ϵ=1e-12) where T
-    randn!(zero_vidalpeps(T, g, D; nflavor=nflavor, Dmax=Dmax, ϵ=ϵ, optimizer=optimizer, simplifier=simplifier))
+    randn!(zero_vidalpeps(T, g, D; nflavor, Dmax, ϵ, optimizer, simplifier))
 end
 function rand_simplepeps(::Type{T}, g::SimpleGraph, D::Int; nflavor::Int=2, optimizer=GreedyMethod(), simplifier=MergeGreedy(), Dmax::Int=D, ϵ=1e-12) where T
-    randn!(zero_simplepeps(T, g, D; nflavor=nflavor, Dmax=Dmax, ϵ=ϵ, optimizer=optimizer, simplifier=simplifier))
+    randn!(zero_simplepeps(T, g, D; nflavor, Dmax, ϵ, optimizer, simplifier))
 end
 function Random.randn!(peps::PEPS)
     for t in alltensors(peps)
@@ -399,25 +437,26 @@ Yao.nactive(peps::PEPS) = nsite(peps)
 Yao.statevec(peps::PEPS) = vec(peps)
 for (APPLY, APPLY_ONSITE, MUL) in [(:_apply!, :apply_onsite!, :mul!),
         (:apply, :apply_onsite, :*)]
-    @eval function YaoBlocks.$APPLY(peps::PEPS{T}, block::PutBlock{N,1}) where {T,N}
+    @eval function YaoBlocks.$APPLY(peps::PEPS{T}, block::PutBlock{2,1}) where {T}
         $APPLY_ONSITE(peps, block.locs[1], Matrix{T}(block.content))
     end
-    @eval function YaoBlocks.$APPLY(peps::PEPS{T}, block::KronBlock{N,M,BT}) where {T,N,M,BT<:NTuple{M,AbstractBlock{1}}}
+    @eval function YaoBlocks.$APPLY(peps::PEPS{T}, block::KronBlock{D,M,BT}) where {D,M,T,BT<:NTuple{M,AbstractBlock}}
         for (loc, g) in zip(block.locs, subblocks(block))
             peps = $APPLY_ONSITE(peps, loc[1], Matrix{T}(g))
         end
         return peps
     end
-    @eval function YaoBlocks.$APPLY(peps::PEPS{T}, block::ControlBlock{N,BT,1,1}) where {T,N,BT}
+    @eval function YaoBlocks.$APPLY(peps::PEPS{T}, block::ControlBlock{BT,1,1}) where {T,BT}
         # forward to PutBlock.
-        YaoBlocks.$APPLY(peps, put(N, (block.ctrl_locs[1], block.locs[1])=>control(2,1,2=>block.content)))
+        YaoBlocks.$APPLY(peps, put(nqudits(block), (block.ctrl_locs[1], block.locs[1])=>control(2,1,2=>block.content)))
     end
     @eval function YaoBlocks.$APPLY(peps::PEPS{T}, block::Scale) where T
         $MUL(YaoBlocks.$APPLY(peps, content(block)), (1.0+0im)*Yao.factor(block))
     end
 end
 # no non-inplace version defined.
-function YaoBlocks._apply!(peps::PEPS{T}, block::PutBlock{N,2}) where {T,N}
+YaoBlocks._apply!(peps::PEPS, block::PutBlock{2,2}) = invoke(YaoBlocks._apply!, Tuple{PEPS,PutBlock{D,2} where D}, peps, block)
+function YaoBlocks._apply!(peps::PEPS{T}, block::PutBlock{D,2}) where {T,D}
     apply_onbond!(peps, block.locs..., reshape(Matrix{T}(block.content), 2, 2, 2, 2))
 end
 
