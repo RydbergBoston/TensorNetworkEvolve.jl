@@ -29,6 +29,11 @@ jobs:
         with:
           version: ${{ matrix.version }}
           arch: ${{ matrix.arch }}
+      - run: |
+          julia --project=docs -e '
+            using Pkg
+            Pkg.develop(PackageSpec(path=joinpath(pwd(),"lib","Cracker")))
+            Pkg.instantiate()'
       - uses: actions/cache@v1
         env:
           cache-name: cache-artifacts
