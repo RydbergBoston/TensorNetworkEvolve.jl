@@ -10,28 +10,25 @@ def init_spinup_MPS(N, D=1):
     ----
     D : physical dimension, product state for D=1
     """
-    Bs = np.zeros([5, D, 2, D], dtype=np.csingle)
-    Bs[:, 0, 0, 0] = 1. # spinup
-    Bs = torch.from_numpy(Bs).requires_grad_(True)
-    Ss = torch.ones([5, 1], dtype=torch.cfloat, requires_grad=True)
-    return MPS(Bs, Ss)
+    Ms = np.zeros([5, D, 2, D], dtype=np.csingle)
+    Ms[:, 0, 0, 0] = 1. # spinup
+    Ms = torch.from_numpy(Ms).requires_grad_(True)
+    return MPS(Ms)
 
 class MPS:
     """Class for handling matrix product states assuming a Vidal form"""
-    def __init__(self, Bs, Ss):
-        assert len(Bs) == len(Ss)
-        self.Bs = Bs
-        self.Ss = Ss
-        self.N = len(Bs)
+    def __init__(self, Ms):
+        self.Ms = Ms
+        self.N = len(Ms)
 
     def get_theta1(self, i):
         """Effective single-site wave function on site i"""
-        return torch.tensordot(torch.diag(self.Ss[i]), self.Bs[i], [[1], [0]])  
+        return torch.tensordot(torch.diag(self.Ss[i]), self.Ms[i], [[1], [0]])  
 
     def get_theta2(self, i):
         """Effective two-site wave function on i,(i+1)"""
         j = i + 1
-        return torch.tensordot(self.get_theta1(i), self.Bs[j], [[2], [0]])  
+        return torch.tensordot(self.get_theta1(i), self.Ms[j], [[2], [0]])  
 
     def bond_expectation_value(self, op):
         """Compute exp. values of local operator 'op' at bonds"""
@@ -45,13 +42,13 @@ class MPS:
     def norm(self):
         """ <psi|psi> """
         N = self.N
-        overlap = torch.tensordot(self.Bs[N-1], self.Bs[N-1].conj(), axes=([2, 1], [2, 1]))
+        overlap = torch.tensordot(self.Ms[N-1], self.Ms[N-1].conj(), ([2, 1], [2, 1]))
         for i in reversed(range(N-1)):
-            B = self.Bs[i]
-            Bc = self.Bs[i].conj()
+            B = self.Ms[i]
+            Bc = self.Ms[i].conj()
             overlap = torch.tensordot(B, overlap, ([2], [0])) 
             overlap = torch.tensordot(overlap, Bc, ([2, 1], [2, 1])) 
-        return overlap.item()
+        return overlap
         
     def MPO_expectation_value(self, mpo):
         """Expectation value of an MPO"""
@@ -59,12 +56,12 @@ class MPS:
         assert(N == len(mpo))
         # Close right
         DR = mpo[N-1].shape[1]
-        chi = self.Bs[-1].shape[0]
+        chi = self.Ms[-1].shape[0]
         RP = torch.zeros([chi, DR, chi], dtype=torch.cfloat) 
         RP[:, -1, :] = torch.eye(chi, dtype=torch.cfloat)
         # Iterate from right to left
         for i in reversed(range(N)): 
-            B = self.Bs[i] 
+            B = self.Ms[i] 
             Bc = B.conj() 
             RP = torch.tensordot(B, RP, [[2], [0]]) 
             RP = torch.tensordot(RP, mpo[i], [[1, 2], [3, 1]]) 
@@ -74,7 +71,7 @@ class MPS:
         LP = torch.zeros([chi, DL, chi], dtype=torch.cfloat)  
         LP[:, 0, :] = torch.eye(chi)
         result = torch.tensordot(LP, RP, ([0, 1, 2], [0, 1, 2])) 
-        return result.item()
+        return result
 
 
 class IsingModel:
@@ -89,24 +86,7 @@ class IsingModel:
         self.sigma_x = torch.tensor([[0., 1.], [1., 0.]], dtype=torch.cfloat)
         self.sigma_z = torch.tensor([[1., 0.], [0., -1.]], dtype=torch.cfloat)
         self.ident = torch.eye(2, dtype=torch.cfloat)
-        self.init_H_bonds()
         self.init_H_mpo()
-
-    def init_H_bonds(self):
-        """Decompose local Hamiltonian into energy bonds"""
-        sx, sz, ident = self.sigma_x, self.sigma_z, self.ident
-        d = self.d
-        H_list = []
-        for i in range(self.N - 1):
-            hL = hR = .5 * self.h
-            if i == 0: # first bond
-                hL = self.h
-            elif i == self.N - 2: # last bond
-                hL = self.h
-            H_bond = self.J * torch.kron(sz, sz)
-            H_bond += hL * torch.kron(sx, ident) + hR * torch.kron(ident, sx)
-            H_list.append(H_bond.reshape([d, d, d, d]))
-        self.H_bonds = H_list
 
     def init_H_mpo(self):
         """Hamiltonian MPO"""
@@ -121,11 +101,29 @@ class IsingModel:
             Ws.append(W)
         self.H_mpo = Ws
 
-    def energy_bonds(self, psi):
-        """Compute energy E = <psi|H|psi> for MPS."""
+    def energy(self, psi):
+        """Compute energy E = <psi|H|psi>/<psi|psi> for MPS."""
         assert psi.N == self.N
-        E = torch.sum(psi.bond_expectation_value(self.H_bonds))
+        E = psi.MPO_expectation_value(self.H_mpo) / psi.norm()
         return E
 
 
-        
+if __name__ == "__main__":
+    N = 5
+    D = 1
+    print(f"+++ Ising chain with N={N}, MPS bond dim D={D} +++")
+    print(f"Finding the ground state with PyTorch autograd...\n")
+    psi = init_spinup_MPS(N, D)
+    model = IsingModel(N)
+    loss = model.energy(psi)
+    loss.backward()
+    optim = torch.optim.SGD([psi.Ms], lr=1e-2, momentum=0.9)
+
+    num_iter = 500
+    for i in range(num_iter):
+        optim.zero_grad()
+        loss = model.energy(psi)
+        loss.backward()
+        optim.step()
+        if i%(num_iter/10) == 0:
+            print(f"Iteration {i:03d}/{num_iter} - Current GS energy: {loss.item()}")
