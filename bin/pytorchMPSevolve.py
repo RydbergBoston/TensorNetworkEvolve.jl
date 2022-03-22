@@ -8,7 +8,7 @@ def init_spinup_MPS(N, D=1):
     ----
     D : physical dimension, product state for D=1
     """
-    Ms = np.zeros([N, D, 2, D], dtype=np.csingle)
+    Ms = torch.zeros([N, D, 2, D], dtype=torch.float32)
     Ms[:, 0, 0, 0] = 1. # spinup
     Ms = torch.from_numpy(Ms).requires_grad_(True)
     return MPS(Ms)
