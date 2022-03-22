@@ -2,15 +2,13 @@ import numpy as np
 import torch
 from torch.autograd import Variable
 
-#TODO how to constrain the norm
-
 def init_spinup_MPS(N, D=1):
     """MPS: all spins up
     Args
     ----
     D : physical dimension, product state for D=1
     """
-    Ms = np.zeros([5, D, 2, D], dtype=np.csingle)
+    Ms = np.zeros([N, D, 2, D], dtype=np.csingle)
     Ms[:, 0, 0, 0] = 1. # spinup
     Ms = torch.from_numpy(Ms).requires_grad_(True)
     return MPS(Ms)
@@ -103,7 +101,11 @@ class IsingModel:
 
     def energy(self, psi):
         """Compute energy E = <psi|H|psi>/<psi|psi> for MPS."""
-        assert psi.N == self.N
+        try:
+             psi.N == self.N
+        except:
+            print(f'Length need to match: MPS length={psi.N}, MPO length={self.N}')
+            raise ValueError
         E = psi.MPO_expectation_value(self.H_mpo) / psi.norm()
         return E
 
