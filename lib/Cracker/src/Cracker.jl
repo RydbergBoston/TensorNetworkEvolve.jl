@@ -2,6 +2,7 @@ module Cracker
 
 using ChainRules: rrule, unthunk
 using LinearAlgebra
+using ChainRules
 
 export track, untrack
 
