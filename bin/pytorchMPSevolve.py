@@ -13,6 +13,15 @@ def init_spinup_MPS(N, D=1):
     Ms = torch.from_numpy(Ms).requires_grad_(True)
     return MPS(Ms)
 
+def init_random_MPS(N, D=1):
+    """MPS: all spins up
+    Args
+    ----
+    D : physical dimension, product state for D=1
+    """
+    Ms = torch.rand([N, D, 2, D], dtype=torch.cfloat, requires_grad=True)
+    return MPS(Ms)
+
 class MPS:
     """Class for handling matrix product states assuming a Vidal form"""
     def __init__(self, Ms):
@@ -46,6 +55,10 @@ class MPS:
             Bc = self.Ms[i].conj()
             overlap = torch.tensordot(B, overlap, ([2], [0])) 
             overlap = torch.tensordot(overlap, Bc, ([2, 1], [2, 1])) 
+        chiL = self.Ms[0].shape[0]
+        chiR = self.Ms[-1].shape[0]
+        LP = torch.eye(chiL, dtype=torch.cfloat)
+        overlap = torch.tensordot(LP, overlap, ([0,1], [0,1]))
         return overlap
         
     def MPO_expectation_value(self, mpo):
