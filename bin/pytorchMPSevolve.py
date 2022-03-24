@@ -1,4 +1,3 @@
-import numpy as np
 import torch
 from torch.autograd import Variable
 
@@ -10,7 +9,7 @@ def init_spinup_MPS(N, D=1):
     """
     Ms = torch.zeros([N, D, 2, D], dtype=torch.cfloat)
     Ms[:, 0, 0, 0] = 1. # spinup
-    Ms = torch.from_numpy(Ms).requires_grad_(True)
+    Ms.requires_grad = True
     return MPS(Ms)
 
 def init_random_MPS(N, D=1):
@@ -19,8 +18,11 @@ def init_random_MPS(N, D=1):
     ----
     D : physical dimension, product state for D=1
     """
-    Ms = torch.rand([N, D, 2, D], dtype=torch.cfloat, requires_grad=True)
-    return MPS(Ms)
+    Ms = torch.rand([N, D, 2, D], dtype=torch.cfloat, requires_grad=False)
+    psi = MPS(Ms)
+    psi.renormalize()
+    psi.Ms.requires_grad = True
+    return psi
 
 class MPS:
     """Class for handling matrix product states assuming a Vidal form"""
@@ -60,6 +62,11 @@ class MPS:
         LP = torch.eye(chiL, dtype=torch.cfloat)
         overlap = torch.tensordot(LP, overlap, ([0,1], [0,1]))
         return overlap
+
+    def renormalize(self):
+        """Renormalize the state"""
+        norm = self.norm()
+        self.Ms[:] = torch.div(self.Ms, torch.sqrt(torch.abs(norm))**(1/self.N))
         
     def MPO_expectation_value(self, mpo):
         """Expectation value of an MPO"""
@@ -117,19 +124,19 @@ class IsingModel:
         try:
              psi.N == self.N
         except:
-            print(f'Length need to match: MPS length={psi.N}, MPO length={self.N}')
+            print(f'Length does not match: MPS length={psi.N}, MPO length={self.N}')
             raise ValueError
         E = psi.MPO_expectation_value(self.H_mpo) / psi.norm()
         return E
 
 
 if __name__ == "__main__":
-    N = 5
-    D = 1
+    N = 10
+    D = 3
     print(f"+++ Ising chain with N={N}, MPS bond dim D={D} +++")
     print(f"Finding the ground state with PyTorch autograd...\n")
-    psi = init_spinup_MPS(N, D)
     model = IsingModel(N)
+    psi = init_random_MPS(N, D)
     loss = model.energy(psi)
     loss.backward()
     optim = torch.optim.SGD([psi.Ms], lr=1e-2, momentum=0.9)
@@ -140,5 +147,38 @@ if __name__ == "__main__":
         loss = model.energy(psi)
         loss.backward()
         optim.step()
-        if i%(num_iter/10) == 0:
-            print(f"Iteration {i:03d}/{num_iter} - Current GS energy: {loss.item()}")
+        with torch.no_grad(): # Need to tell torch to stop tracking the gradient for renormalizing
+            psi.renormalize()
+        if i%(num_iter//10) == 0:
+            print(f"Iteration {i:03d}/{num_iter} - Norm error {abs(1 - psi.norm().item()):.1e} - GS energy (loss) {model.energy(psi).item():.2f} ")
+
+
+
+
+# TODO
+# LBFGS implementation below fails
+# 
+# N = 5
+# D = 2
+# model = IsingModel(N)
+# psi = init_random_MPS(N, D)
+# loss = model.energy(psi)
+# loss.backward()
+# optim = torch.optim.LBFGS([psi.Ms])
+
+# num_iter = 500
+# for i in range(num_iter):
+#     def closure():
+#         if torch.is_grad_enabled():
+#             optim.zero_grad()
+#         loss = model.energy(psi)
+#         if loss.requires_grad:
+#             loss.backward()
+#         return loss
+#     optim.step(closure) # The optimizer does not have constraints, i.e. the state is not normalized anymore
+#     # Need to tell torch to stop tracking the gradient
+#     with torch.no_grad(): # Need to tell torch to stop tracking the gradient for renormalizing
+#         psi.renormalize()
+#     if i%(num_iter//10) == 0:
+#         print(f"Iteration {i:03d}/{num_iter} - Norm error {abs(1 - psi.norm().item()):.1e} - GS energy (loss) {model.energy(psi).item():.2f} ")
+
