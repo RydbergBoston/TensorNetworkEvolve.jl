@@ -19,6 +19,7 @@ accumulate_grad!(x::AbstractArray, grad) = (x .+= grad)
 
 backpropagate!(tracked_value::Tuple, _grad) = backpropagate!.(tracked_value, ChainRules.unthunk(_grad))
 function backpropagate!(tracked_value, _grad)
+    @show tracked_value
     grad = unthunk(_grad)
     is_tracked(tracked_value) || error("expect tracked value")
     record = tracked_value.record::Record
