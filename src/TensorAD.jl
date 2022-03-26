@@ -1,5 +1,6 @@
 using OMEinsum
 using ChainRules
+using ChainRules: NoTangent, unthunk
 
 struct BackInfo
     f
@@ -44,14 +45,13 @@ end
 # does not return gradients in kwargs
 # always return a tuple
 function gradient(f, args...; kwargs...)
-    args = DiffTensor.(args; requires_grad=true)
     y = f(args...; kwargs...)
     if ndims(y) != 0 || !(eltype(y) <: Real)
         @warn "differentiating a tensor not a scalar real number, got eltype `$(eltype(y))` and rank `$(ndims(y))`"
     end
-    y.grad = DiffTensor(fill(one(eltype(y)), size(y.data)...); requires_grad=false)
+    y.grad = DiffTensor(fill(one(eltype(y)), size(y.data)...); requires_grad=true)
     back!(y)
-    return getdata.(getgrad.(args))
+    return getgrad.(args)
 end
 
 function back!(y::DiffTensor)
@@ -66,9 +66,9 @@ function _extract_grads!(args::Tuple, grads::Tuple)
         if t isa DiffTensor && t.requires_grad
             # accumulate or create
             if !isdefined(t, :grad)
-                t.grad = DiffTensor(g; requires_grad=true)
+                t.grad = unthunk(g)
             else
-                t.grad = t.grad + DiffTensor(g; requires_grad=true)
+                t.grad = t.grad + unthunk(g)
             end
             # has parents
             if isdefined(t, :info)
@@ -85,14 +85,22 @@ _rrule(f, args...; kwargs...) = ChainRules.rrule(f, args...; kwargs...)
 
 for EC in [:DynamicEinCode, :StaticEinCode]
     @eval function OMEinsum.einsum(code::$EC, @nospecialize(xs::NTuple{N,DiffTensor} where N), size_dict::Dict)
-        y, back = _rrule(einsum, code, getdata.(xs), size_dict)
+        y = einsum(code, getdata.(xs), size_dict)
+        function einsum_pullback(dy)
+            dxs = ntuple(i -> ChainRules.@thunk(OMEinsum.einsum_grad(OMEinsum.getixs(code), xs, OMEinsum.getiy(code), size_dict, conj(dy), i)), length(xs))
+            return (NoTangent(), dxs, NoTangent())
+        end
         requires_grad = any(x->x.requires_grad, xs)
-        return DiffTensor(y; requires_grad, info=BackInfo(einsum, (code, xs, size_dict), (args...; kwargs...)->ChainRules.unthunk.(back(args...; kwargs...)[2:end])))
+        return DiffTensor(y; requires_grad, info=BackInfo(einsum, (code, xs, size_dict), einsum_pullback))
     end
 end
 
 function Base.:(+)(x::DiffTensor, y::DiffTensor)
-    DiffTensor(x.data + y.data; requires_grad=x.requires_grad || y.requires_grad, back)
+    DiffTensor(x.data + y.data; requires_grad=x.requires_grad || y.requires_grad, info=BackInfo(+, (x, y), dy->(dy, dy)))
+end
+
+function Base.conj(x::DiffTensor)
+    DiffTensor(conj(x.data); requires_grad=x.requires_grad, info=BackInfo(conj, (x,), dy->(conj(dy),)))
 end
 
 using Test, OMEinsum
@@ -105,7 +113,23 @@ using ForwardDiff
     end
     x = randn(10, 10)
     y = randn(10, 10)
-    gs = gradient(f, x, y)
+    gs = getdata.(gradient(f, x, y))
     hs = ForwardDiff.gradient(x->f(reshape(x[1:100], 10, 10), reshape(x[101:200], 10, 10))[], vcat(vec(x), vec(y)))
     @test vcat(vec(gs[1]), vec(gs[2])) ≈ hs
+end
+
+@testset "hessian" begin
+    function f(x, y)
+        z = ein"ij,jk->ik"(x, y)
+        return ein"ii->"(z)
+    end
+    x = DiffTensor(randn(10, 10); requires_grad=true)
+    y = DiffTensor(randn(10, 10); requires_grad=true)
+    gs = gradient(f, x, y)
+    gs[1].grad = DiffTensor(fill(one(eltype(gs[1])), size(gs[1].data)...); requires_grad=true)
+    back!(gs[1])
+    @show x.grad
+    #hs = ForwardDiff.hessian(x->f(reshape(x[1:100], 10, 10), reshape(x[101:200], 10, 10))[], vcat(vec(x), vec(y)))
+    #@show hs
+    #@test vcat(vec(gs[1]), vec(gs[2])) ≈ hs
 end
