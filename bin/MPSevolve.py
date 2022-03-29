@@ -1,5 +1,4 @@
 import torch
-from torch.autograd import Variable
 
 def init_spinup_MPS(N, D=1):
     """MPS: all spins up
