@@ -13,7 +13,7 @@ def example_rand_peps(L, D=5, d=2):
     vertex_tensors = []
     for i in range(N):
         shape = ([D] * len(G.edges(i))) + [d]
-        t = torch.rand(shape, dtype=torch.cdouble) # tensors have phys. dim last
+        t = torch.rand(shape, dtype=torch.cdouble, requires_grad=True) # tensors have phys. dim last
         vertex_tensors.append(t)
     # Vertex labels
     vertex_labels = []
