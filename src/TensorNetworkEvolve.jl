@@ -11,6 +11,7 @@ using Yao: YaoBlocks
 using OMEinsumContractionOrders
 
 include("peps.jl")
+include("vectorpeps.jl")
 include("tebd.jl")
 include("timeevolve.jl")
 include("cracker.jl")

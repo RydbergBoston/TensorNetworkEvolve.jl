@@ -12,3 +12,7 @@ end
 @testset "timeevolve.jl" begin
     include("timeevolve.jl")
 end
+
+@testset "vectorpeps.jl" begin
+    include("vectorpeps.jl")
+end

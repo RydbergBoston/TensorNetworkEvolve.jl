@@ -1,9 +1,10 @@
 using TensorNetworkEvolve, Random, Test
-using Graphs, Yao, ForwardDiff, KrylovKit, LinearMaps
+using Graphs, Yao, KrylovKit, LinearMaps #ForwardDiff
 using Zygote
 
 @testset "simple_evolve" begin
     function rand_hamiltonian(g::SimpleGraph)
+        # defines a random Hamiltonian of the form Jx XX + Jy YY + Jz ZZ along edges of a graph g, plus a transverse field on every qubit
         blocks = []
         nbit = nv(g)
         for edge in edges(g)
@@ -20,12 +21,12 @@ using Zygote
         add_edge!(g, i, j)
     end
 
+    # First, exactly evolve a random state under the random Hamiltonian using Yao's built-in functionality
     time = 1
     h = rand_hamiltonian(g)
     state1 = rand_state(5)
     state2 = copy(state1)
-    te = time_evolve(h, time)
-    apply!(state1, te)
+    apply!(state1, time_evolve(h, time))
 
     function tn_exact_evolve(s::ArrayReg, h, time)
         #print(statevec(s))
@@ -45,7 +46,7 @@ using Zygote
         #print(state([s)[1])
         return 0
     end 
-    tn_exact_evolve(state2, h, time)
+    #tn_exact_evolve(state2, h, time)
     #@test TensorNetworkEvolve.iloss2(h, p1, variables(p1)) isa Real
     #fvec = TensorNetworkEvolve.fvec(p1, h)
     #@test fvec isa Vector
