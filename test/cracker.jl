@@ -1,5 +1,5 @@
 using Test, ForwardDiff, TensorNetworkEvolve
-using Cracker
+using Cracker, OMEinsum
 
 @testset "OMEinsum" begin
     T = Float64
