@@ -102,8 +102,9 @@ function hessian(f, x::AbstractVector{T}) where T
         hx = DiffTensor(fill(one(eltype(gx)), size(gx.data)...); requires_grad=true)
         accumulate_gradient!(grad_storage, gx, hx)
         back!(gx, grad_storage)
-        getgrad(grad_storage, x)
+        push!(slices, getgrad(grad_storage, x))
     end
+    return cat(slices...; dims=2)
 end
 
 include("rules.jl")

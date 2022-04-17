@@ -5,10 +5,10 @@ for EC in [:DynamicEinCode, :StaticEinCode]
         y = einsum(code, getdata.(xs), size_dict)
         function einsum_pullback(dy)
             dxs = ntuple(i -> ChainRules.@thunk(OMEinsum.einsum_grad(OMEinsum.getixs(code), xs, OMEinsum.getiy(code), size_dict, conj(dy), i)), length(xs))
-            return (NoTangent(), dxs, NoTangent())
+            return (dxs,)
         end
         requires_grad = any(x->x.requires_grad, xs)
-        return DiffTensor(y; requires_grad, info=BackInfo(einsum, (code, xs, size_dict), einsum_pullback))
+        return DiffTensor(y; requires_grad, info=BackInfo(einsum, (xs,), einsum_pullback))
     end
 end
 
@@ -19,27 +19,41 @@ end
 function Base.conj(x::DiffTensor)
     DiffTensor(conj(x.data), x.requires_grad, BackInfo(conj, (x,), dy->(conj(dy),)))
 end
-function Base.getindex(x::DiffTensor, indices::AbstractRange)
-    DiffTensor(DiffTensor(Base.getindex(x.data, indices); requires_grad=x.requires_grad),
-        x.requires_grad, BackInfo(getindex, (x, indices), function (dy)
+function Base.getindex(x::DiffTensor, indices::AbstractRange...)
+    DiffTensor(DiffTensor(Base.getindex(x.data, indices...); requires_grad=x.requires_grad),
+        x.requires_grad, BackInfo(getindex, (x,), function (dy)
         dx = zero(x)
         dx_ = accum(dx, indices, dy)
-        (dx_, NoTangent())
+        (dx_,)
     end))
 end
 function accum(x::DiffTensor, indices, y::DiffTensor)
     z = copy(x)
-    z.data[indices] .+= y.data
+    z.data[indices...] .+= y.data
     DiffTensor(z, x.requires_grad,
-        BackInfo(accum, (x, indices..., y),
+        BackInfo(accum, (x, y),
         function (dz)
-            dz, NoTangent(), dz[indices]
+            dz, dz[indices...]
         end
         ))
 end
 
-function reshape(x::DiffTensor, sz...)
+function Base.reshape(x::DiffTensor, sz...)
     size0 = size(x)
-    DiffTensor(reshape(x.data, sz...), x.requires_grad, BackInfo(reshape, (x, sz...), dy->(reshape(dy, size0...), ntuple(i->NoTangent(), length(sz))...)))
+    DiffTensor(reshape(x.data, sz...), x.requires_grad, BackInfo(:reshape, (x,),
+        dy->(reshape(dy, size0...),)))
 end
 
+function Base.cat(a::DiffTensor, B::DiffTensor...; dims)
+    A = (a, A...)
+    ends = ntuple(i->cumsum(size.(A, dim)), ndims(a))
+    DiffTensor(cat(getdata.(A)...; dims=dims), any(t->t.requires_grad, A), BackInfo(
+        cat, A, function (dy)
+            #return ntuple(i=>dy[ntuple(i->:, dim-1)..., (i==1 ? 1 : ends[i-1]+1):ends[i], ntuple(i->:, ndims(dy)-dim)...], length(A))
+            return ntuple(i->getindex(dy, ntuple(idim->begin
+                idim ∈ dims ? ((i==1 ? 1 : ends[idim][i-1]+1):ends[idim][i]) : 2
+                end,
+                 ndims(dy))...), length(A))
+        end
+    ))
+end
