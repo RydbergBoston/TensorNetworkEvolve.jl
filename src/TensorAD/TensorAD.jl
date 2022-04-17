@@ -16,6 +16,9 @@ mutable struct DiffTensor{T,N,AT<:AbstractArray{T,N}} <: AbstractArray{T,N}
     requires_grad::Bool
     info::BackInfo
     function DiffTensor(data::AT, requires_grad::Bool, info) where {T,N,AT<:AbstractArray{T,N}}
+        if AT <: DiffTensor
+            error("DiffTensor in DiffTensor is forbidden to prevent errors.")
+        end
         new{T,N,AT}(data, requires_grad, info)
     end
     function DiffTensor(data::AT; requires_grad::Bool, info=nothing) where {T,N,AT<:AbstractArray{T,N}}
@@ -27,7 +30,7 @@ mutable struct DiffTensor{T,N,AT<:AbstractArray{T,N}} <: AbstractArray{T,N}
     end
 end
 
-#Base.zero(x::Diffractor) =
+Base.zero(x::DiffTensor) = DiffTensor(zero(x.data); requires_grad=false)
 Base.size(x::DiffTensor, indices...) = Base.size(x.data, indices...)
 getdata(x::DiffTensor) = x.data
 function getgrad(d::AbstractDict, x::DiffTensor)
@@ -49,6 +52,7 @@ function accumulate_gradient!(grad_storage, t, g)
     end
 end
 
+Base.show(io::IO, ::MIME"text/plain", x::DiffTensor) = Base.show(io, x)
 function Base.show(io::IO, x::DiffTensor)
     sz = join(string.(size(x)), "×")
     s = "$(typeof(x))[$sz]"
@@ -99,12 +103,27 @@ function hessian(f, x::AbstractVector{T}) where T
     slices = typeof(x)[]
     for i=1:length(x)
         grad_storage = Dict{UInt,Any}()
-        hx = DiffTensor(fill(one(eltype(gx)), size(gx.data)...); requires_grad=true)
+        hx = zero(gx)
+        hx.data[i] = one(T)
         accumulate_gradient!(grad_storage, gx, hx)
         back!(gx, grad_storage)
         push!(slices, getgrad(grad_storage, x))
     end
     return cat(slices...; dims=2)
+end
+
+function jacobian(f, x::AbstractVector{T}) where T
+    slices = typeof(x)[]
+    y = f(x)
+    for i=1:length(y)
+        grad_storage = Dict{UInt,Any}()
+        gy = zero(y)
+        gy.data[i] = one(T)
+        accumulate_gradient!(grad_storage, y, gy)
+        back!(y, grad_storage)
+        push!(slices, getgrad(grad_storage, x))
+    end
+    return transpose(cat(slices...; dims=2))
 end
 
 include("rules.jl")

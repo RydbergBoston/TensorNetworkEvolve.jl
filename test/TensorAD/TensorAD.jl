@@ -23,18 +23,27 @@ end
     end
     x = DiffTensor(randn(10, 10); requires_grad=true)
     y = DiffTensor(randn(10, 10); requires_grad=true)
-    gx, gy = gradient(f, x, y)
+    gx, gy = TensorAD.gradient(f, x, y)
     grad_storage = Dict{UInt,Any}()
-    accumulate_gradient!(grad_storage, gx, DiffTensor(fill(one(eltype(gx)), size(gx.data)...); requires_grad=true))
-    back!(gx, grad_storage)
+    TensorAD.accumulate_gradient!(grad_storage, gx, DiffTensor(fill(one(eltype(gx)), size(gx.data)...); requires_grad=true))
+    TensorAD.back!(gx, grad_storage)
     @show grad_storage[objectid(y)]
 
     grad_storage = Dict{UInt,Any}()
-    accumulate_gradient!(grad_storage, gy, DiffTensor(fill(one(eltype(gy)), size(gy.data)...); requires_grad=true))
-    back!(gy, grad_storage)
-    @show getgrad(grad_storage, x)
-    hs = FiniteDifferences.jacobian(central_fdm(5,1), x0->ForwardDiff.gradient(x->f(reshape(x[1:100], 10, 10), reshape(x[101:200], 10, 10))[], x0), vcat(vec(x), vec(y)))[1]
-    #hs = ForwardDiff.hessian(x->f(reshape(x[1:100], 10, 10), reshape(x[101:200], 10, 10))[], vcat(vec(x), vec(y)))
+    TensorAD.accumulate_gradient!(grad_storage, gy, DiffTensor(fill(one(eltype(gy)), size(gy.data)...); requires_grad=true))
+    TensorAD.back!(gy, grad_storage)
+    @show TensorAD.getgrad(grad_storage, x)
+
+    X = vcat(vec(x.data), vec(y.data))
+    function f2(x)
+        f(reshape(x[1:100], 10, 10), reshape(x[101:200], 10, 10))
+    end
+    hs = FiniteDifferences.jacobian(central_fdm(5,1), x->ForwardDiff.gradient(x->f2(x)[], x), X)[1]
+    g = TensorAD.gradient(f2, DiffTensor(X; requires_grad=true))
+    @show g
+    H = TensorAD.hessian(f2, DiffTensor(X; requires_grad=true))
+    @show H.data ≈ hs
+    @show sum(H.data), sum(hs)
     #@show hs
     #@test vcat(vec(gs[1]), vec(gs[2])) ≈ hs
 end
