@@ -105,7 +105,7 @@ end
 
 function hessian(f, x::DiffTensor{T,1}) where T
     gx, = gradient(f, x)
-    #return jacobian(x->gradient(f, x)[1], x)
+    return jacobian(x->gradient(f, x)[1], x)
 
     slices = typeof(x)[]
     for i=1:length(x)
@@ -114,9 +114,6 @@ function hessian(f, x::DiffTensor{T,1}) where T
         hx.data[i] = one(T)
         accumulate_gradient!(grad_storage, gx.tracker.id, hx)
         back!(gx.tracker, grad_storage)
-        if haskey(grad_storage, x.tracker.id)
-            @show grad_storage[x.tracker.id]
-        end
         push!(slices, getgrad(grad_storage, x))
     end
     return cat(slices...; dims=2)
