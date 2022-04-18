@@ -39,6 +39,22 @@ function match_jacobian(f, args...; atol=1e-5, kwargs...)
     return isapprox(j1, j2.data; atol)
 end
 
+using Debugger
+function match_random(f, args...; atol=1e-5, kwargs...)
+    tf, x = build_testfunc(f, args...; kwargs...)
+    j1 = ForwardDiff.jacobian(tf, x)
+    X = DiffTensor(x; requires_grad=true)
+    y = tf(X)
+    gy = ndims(y) == 0 ? fill(randn(eltype(y))) : randn(eltype(y), size(y)...)
+    g1 = vec(vec(gy)' * j1)
+
+    grad_storage = Dict{UInt,Any}()
+    TensorAD.accumulate_gradient!(grad_storage, y.tracker.id, DiffTensor(gy; requires_grad=false))
+    TensorAD.back!(y.tracker, grad_storage)
+    g2 = vec(TensorAD.getgrad(grad_storage, X))
+    return isapprox(g1, g2.data; atol)
+end
+
 @testset "jacobians" begin
     for (f, args, kwargs) in [
         (ein"ii->", (randn(4,4),), ()),
@@ -58,5 +74,6 @@ end
     ]
         @info "Differentiating function: $f"
         @test match_jacobian(f, args...; kwargs...)
+        @test match_random(f, args...; kwargs...)
     end
 end

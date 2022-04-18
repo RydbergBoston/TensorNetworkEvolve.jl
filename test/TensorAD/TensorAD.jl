@@ -7,7 +7,7 @@ using TensorNetworkEvolve.TensorAD
 @testset "diff tensor" begin
     function f(x, y)
         z = ein"ij,jk->ik"(x, y)
-        return ein"ii->"(sin.(cos.(z)) .* x .* y)
+        return ein"ii->"(sin.(cos.(cos.(z))) .* x .* y)
     end
     x = randn(10, 10)
     y = randn(10, 10)
@@ -64,9 +64,10 @@ end
 
 @testset "hessian 3" begin
     function f(xy)
-        ein"i->"(sin.(cos.(sin.(xy))))
+        sin.(sin.(sin.(xy)))
+        #ein"i->"(sin.(xy[1:1][1:1][1:1][1:1][1:1][1:1]))
     end
-    X = [0.5]
+    X = fill(0.5)
     h1 = ForwardDiff.hessian(x->f(x)[], X)
     h2 = TensorAD.hessian(f, DiffTensor(X; requires_grad=true)).data
     @show h1, h2
@@ -83,6 +84,9 @@ end
         #ein"i->"(ein"i,i->i"(ein"i,i->i"(ein"i,i->i"(x, y), z), a))
     end
     X = [0.5, 0.6, 0.7]
+    j1 = ForwardDiff.jacobian(x->f(x), X)
+    j2 = TensorAD.jacobian(f, DiffTensor(X; requires_grad=true)).data
+    @test j1 ≈ j2
     h1 = ForwardDiff.hessian(x->f(x)[], X)
     h2 = TensorAD.hessian(f, DiffTensor(X; requires_grad=true)).data
     @show h1, h2

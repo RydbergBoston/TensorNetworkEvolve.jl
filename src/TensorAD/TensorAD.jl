@@ -3,10 +3,12 @@ export DiffTensor
 
 using OMEinsum
 using ChainRules
+import AbstractTrees
+
 const ADTypes = Union{Float32, Float64, ComplexF64, ComplexF32}
 
 struct PartialBack
-    tensors::Tuple  # contents are Trackers
+    trackers::Tuple  # contents are Trackers
     back
 end
 struct BackInfo
@@ -26,14 +28,22 @@ function DiffTensor(data::AT, requires_grad::Bool, info) where {T,N,AT<:Abstract
     if AT <: DiffTensor
         error("DiffTensor in DiffTensor is forbidden to prevent errors.")
     end
-    DiffTensor(data, Tracker(objectid((data, info)), requires_grad, info))
+    #DiffTensor(data, Tracker(objectid((data, info)), requires_grad, info))
+    DiffTensor(data, Tracker(rand(UInt), requires_grad, info))
 end
-function DiffTensor(data::AT; requires_grad::Bool, info=BackInfo("∅", ())) where {T,N,AT<:AbstractArray{T,N}}
-    return DiffTensor(data, Tracker(objectid((data, info)), requires_grad, info))
+function DiffTensor(data::AT; requires_grad::Bool, info=BackInfo("INPUT", ())) where {T,N,AT<:AbstractArray{T,N}}
+    #return DiffTensor(data, Tracker(objectid((data, info)), requires_grad, info))
+    return DiffTensor(data, Tracker(rand(UInt), requires_grad, info))
 end
 
 function debug_info(f, args...; kwargs...)
-    "∂"*string(:($f($(map(arg->Expr(:(::), typeof(arg)), args)...); $(kwargs...))))
+    args = join(map(arg->"::$(typeof(arg))", args), ", ")
+    if length(kwargs) != 0
+        kwargs = join(["$k=$v" for (k,v) in kwargs], "")
+        "∂$f($args; $kwargs)"
+    else
+        "∂$f($args)"
+    end
 end
 BackInfo(info::String, backs::Pair{<:NTuple{N,DiffTensor} where N}...) = BackInfo(info, PartialBack.(backs))
 function PartialBack(x::Pair)
@@ -66,7 +76,18 @@ function Base.show(io::IO, x::DiffTensor)
     sz = join(string.(size(x)), "×")
     s = "$(typeof(x))[$sz]"
     if x.tracker.requires_grad
-        s *= "(gradient required)"
+        s *= " ✓"
+    end
+    print(io, s)
+end
+
+Base.show(io::IO, ::MIME"text/plain", tracker::Tracker) = Base.show(io, tracker)
+Base.show(io::IO, tracker::Tracker) = AbstractTrees.print_tree(io, tracker; maxdepth=10)
+AbstractTrees.children(tracker::Tracker) = vcat([collect(Tracker, pb.trackers) for pb in tracker.info.backs]...)
+function AbstractTrees.printnode(io::IO, tracker::Tracker)
+    s = tracker.info.info
+    if tracker.requires_grad
+        s *= " ✓"
     end
     print(io, s)
 end
@@ -86,11 +107,20 @@ end
 
 function back!(y::Tracker, grad_storage::AbstractDict)
     debug_info, backs = y.info.info, y.info.backs
-    @debug "$debug_info, backward $(y.id)"
+    @debug "$debug_info"
     for pb in backs
-        if any(t->t.requires_grad, pb.tensors)
+        if any(t->t.requires_grad, pb.trackers)
             grads = pb.back(grad_storage[y.id])
-            _extract_grads!(grad_storage, pb.tensors, grads)
+            _extract_grads!(grad_storage, pb.trackers, grads)
+        end
+    end
+    # NOTE: backward must go breadth first search?
+    for pb in backs
+        for t in pb.trackers
+            if t.requires_grad
+                # has parents
+                back!(t, grad_storage)
+            end
         end
     end
 end
@@ -98,12 +128,10 @@ end
 function _extract_grads!(grad_storage, args::NTuple{K,Tracker}, grads::Tuple) where K
     for (t, g) in zip(args, grads)
         accumulate_gradient!(grad_storage, t.id, g)
-        # has parents
-        back!(t, grad_storage)
     end
 end
 
-function hessian(f, x::DiffTensor{T,1}) where T
+function hessian(f, x::DiffTensor)
     return jacobian(x->gradient(f, x)[1], x)
     # gx, = gradient(f, x)
     # slices = typeof(x)[]
@@ -118,9 +146,10 @@ function hessian(f, x::DiffTensor{T,1}) where T
     # return cat(slices...; dims=2)
 end
 
-function jacobian(f, x::AbstractVector{T}) where T
+function jacobian(f, x::DiffTensor{T}) where T
     slices = typeof(x)[]
     y = f(x)
+    @debug y.tracker
     for i=1:length(y)
         @debug "hessian, row $i"
         grad_storage = Dict{UInt,Any}()

@@ -56,14 +56,17 @@ function Base.reshape(x::DiffTensor, sz::Int...)
         (x,)=>dy->(reshape(dy, size0...),))
 end
 
-function Base.broadcasted(::typeof(*), a::DiffTensor{T}, b::DiffTensor{T}) where T
-    difftensor(a.data .* b.data, debug_info(Base.broadcasted, *, a, b), (a,)=>dy->(dy .* b,), (b,)=>dy->(dy .* a,))
+function Base.broadcasted(::typeof(*), a::DiffTensor{T,N}, b::DiffTensor{T,N}) where {T,N}
+    res = N == 0 ? fill(a.data[] * b.data[]) : a.data .* b.data
+    difftensor(res, debug_info(".*", a, b), (a,)=>dy->(dy .* b,), (b,)=>dy->(dy .* a,))
 end
 function Base.broadcasted(::typeof(sin), a::DiffTensor{T}) where T
-    difftensor(sin.(a.data), debug_info(Base.broadcasted, sin, a), (a,)=>dy -> (dy .* cos.(a),))
+    res = ndims(a) == 0 ? fill(sin(a.data[])) : sin.(a.data)
+    difftensor(res, debug_info("sin.", a), (a,)=>dy -> (dy .* cos.(a),))
 end
 function Base.broadcasted(::typeof(cos), a::DiffTensor{T}) where T
-    difftensor(cos.(a.data), debug_info(Base.broadcasted, cos, a), (a,)=>dy -> (-dy .* sin.(a),))
+    res = ndims(a) == 0 ? fill(cos(a.data[])) : cos.(a.data)
+    difftensor(res, debug_info("cos.", a), (a,)=>dy -> (-dy .* sin.(a),))
 end
 function Base.cat(a::DiffTensor, B::DiffTensor...; dims)
     A = (a, B...)
