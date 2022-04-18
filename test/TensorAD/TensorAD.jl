@@ -25,14 +25,14 @@ end
     y = DiffTensor(randn(10, 10); requires_grad=true)
     gx, gy = TensorAD.gradient(f, x, y)
     grad_storage = Dict{UInt,Any}()
-    TensorAD.accumulate_gradient!(grad_storage, gx, DiffTensor(fill(one(eltype(gx)), size(gx.data)...); requires_grad=true))
-    TensorAD.back!(gx, grad_storage)
-    @show grad_storage[objectid(y)]
+    TensorAD.accumulate_gradient!(grad_storage, gx.tracker.id, DiffTensor(fill(one(eltype(gx)), size(gx.data)...); requires_grad=true))
+    TensorAD.back!(gx.tracker, grad_storage)
+    @show grad_storage[y.tracker.id].data
 
     grad_storage = Dict{UInt,Any}()
-    TensorAD.accumulate_gradient!(grad_storage, gy, DiffTensor(fill(one(eltype(gy)), size(gy.data)...); requires_grad=true))
-    TensorAD.back!(gy, grad_storage)
-    @show TensorAD.getgrad(grad_storage, x)
+    TensorAD.accumulate_gradient!(grad_storage, gy.tracker.id, DiffTensor(fill(one(eltype(gy)), size(gy.data)...); requires_grad=true))
+    TensorAD.back!(gy.tracker, grad_storage)
+    @show TensorAD.getgrad(grad_storage, x).data
 
     X = vcat(vec(x.data), vec(y.data))
     function f2(x)
