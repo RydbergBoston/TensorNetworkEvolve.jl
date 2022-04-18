@@ -4,14 +4,19 @@ export DiffTensor
 using OMEinsum
 using ChainRules
 using ChainRules: NoTangent, unthunk
+const ADTypes = Union{Float32, Float64, ComplexF64, ComplexF32}
 
 struct BackInfo
-    f
-    args
-    back
+    info::String
+    backs::NTuple{N,Pair} where N
+end
+BackInfo(info::String, backs::Pair...) = BackInfo(info, backs)
+
+function debug_info(f, args...; kwargs...)
+    "∂"*string(:($f($(map(arg->Expr(:(::), typeof(arg)), args)...); $(kwargs...))))
 end
 
-mutable struct DiffTensor{T,N,AT<:AbstractArray{T,N}} <: AbstractArray{T,N}
+struct DiffTensor{T<:ADTypes,N,AT<:AbstractArray{T,N}} <: AbstractArray{T,N}
     data::AT
     requires_grad::Bool
     info::BackInfo
@@ -76,15 +81,20 @@ function gradient(f, args...; kwargs...)
 end
 
 function back!(y::DiffTensor, grad_storage::AbstractDict)
-    f, args, back = y.info.f, y.info.args, y.info.back
-    @debug "Differentiating $(f) on argument types $(typeof(args))"
-    grads = back(getgrad(grad_storage, y))
-    _extract_grads!(grad_storage, args, grads)
+    debug_info, backs = y.info.info, y.info.backs
+    @debug debug_info
+    for (args, back) in backs
+        if any(arg->arg.requires_grad, args)
+            grads = back(getgrad(grad_storage, y))
+            _extract_grads!(grad_storage, args, grads)
+        end
+    end
 end
 
 function _extract_grads!(grad_storage, args::Tuple, grads::Tuple)
     for (t, g) in zip(args, grads)
-        if t isa DiffTensor && t.requires_grad
+        if t isa DiffTensor && g isa DiffTensor
+            t.requires_grad || continue
             accumulate_gradient!(grad_storage, t, g)
             # has parents
             if isdefined(t, :info)
@@ -93,6 +103,8 @@ function _extract_grads!(grad_storage, args::Tuple, grads::Tuple)
         elseif t isa Tuple && g isa Tuple
             # recurse on tuples
             _extract_grads!(grad_storage, t, g)
+        else
+            error("can not extract gradients from input argument types: $(typeof(t)) and $(typeof(g))")
         end
     end
 end
