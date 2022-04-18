@@ -68,9 +68,7 @@ end
         x = xy[1:1]
         y = xy[1:1]
         z = xy[1:1]
-        #ein"i->"(((x .* y) .* z) .*a)
         ein"i->"((x .* y) .* z)
-        #ein"i->"(ein"i,i->i"(ein"i,i->i"(ein"i,i->i"(x, y), z), a))
     end
     X = [0.5, 0.6, 0.7]
     j1 = ForwardDiff.jacobian(x->f(x), X)
@@ -78,6 +76,6 @@ end
     @test j1 ≈ j2
     h1 = ForwardDiff.hessian(x->f(x)[], X)
     h2 = TensorAD.hessian(f, DiffTensor(X)).data
-    @show h1, h2
+    println(TensorAD.GLOBAL_TAPE)
     @test h1 ≈ h2
 end

@@ -2,7 +2,6 @@ module TensorAD
 export DiffTensor
 
 using OMEinsum
-using ChainRules
 
 const ADTypes = Union{Float32, Float64, ComplexF64, ComplexF32}
 
@@ -61,13 +60,18 @@ function getgrad(d::AbstractDict, key::UInt, default)
 end
 getgrad(d::AbstractDict, key::Tuple, default) = getgrad(Ref(d), key, Ref(default))
 getgrad(d::AbstractDict, key::Tuple) = getgrad.(Ref(d), key)
-#getgrad(d::AbstractDict, ::Any) = nothing  # return nothing for non-DiffTensor
 function accumulate_gradient!(grad_storage, key::UInt, g)
     # accumulate or create
     if !haskey(grad_storage, key)
         grad_storage[key] = g
     else
         grad_storage[key] = grad_storage[key] + g
+    end
+end
+
+function accumulate_gradient!(grad_storage, keys::Tuple, grads)
+    for (t, g) in zip(keys, grads)
+        accumulate_gradient!(grad_storage, t, g)
     end
 end
 
@@ -111,11 +115,9 @@ function back!(y::Tape, grad_storage::AbstractDict)
             dy = getgrad(grad_storage, pb.output_ids, ()->nothing)
             if dy !== nothing
                 grads = pb.back(dy)
-                for (t, g) in zip(pb.input_ids, grads)
-                    accumulate_gradient!(grad_storage, t, g)
-                end
+                accumulate_gradient!(grad_storage, pb.input_ids, grads)
             else
-                #@warn "can not find requested gradient for: $(debug_info)"
+                @debug "can not find requested gradient for $pb"
             end
         end
     end
