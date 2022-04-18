@@ -35,22 +35,23 @@ end
 function match_jacobian(f, args...; atol=1e-5, kwargs...)
     tf, x = build_testfunc(f, args...; kwargs...)
     j1 = ForwardDiff.jacobian(tf, x)
-    j2 = TensorAD.jacobian(tf, DiffTensor(x; requires_grad=true))
+    j2 = TensorAD.jacobian(tf, DiffTensor(x))
     return isapprox(j1, j2.data; atol)
 end
 
 using Debugger
 function match_random(f, args...; atol=1e-5, kwargs...)
+    empty!(TensorAD.GLOBAL_TAPE.instructs)
     tf, x = build_testfunc(f, args...; kwargs...)
     j1 = ForwardDiff.jacobian(tf, x)
-    X = DiffTensor(x; requires_grad=true)
+    X = DiffTensor(x)
     y = tf(X)
     gy = ndims(y) == 0 ? fill(randn(eltype(y))) : randn(eltype(y), size(y)...)
     g1 = vec(vec(gy)' * j1)
 
     grad_storage = Dict{UInt,Any}()
-    TensorAD.accumulate_gradient!(grad_storage, y.tracker.id, DiffTensor(gy; requires_grad=false))
-    TensorAD.back!(y.tracker, grad_storage)
+    TensorAD.accumulate_gradient!(grad_storage, TensorAD.getid(y), DiffTensor(gy, false))
+    TensorAD.back!(TensorAD.GLOBAL_TAPE, grad_storage)
     g2 = vec(TensorAD.getgrad(grad_storage, X))
     return isapprox(g1, g2.data; atol)
 end

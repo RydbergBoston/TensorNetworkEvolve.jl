@@ -11,7 +11,7 @@ using TensorNetworkEvolve.TensorAD
     end
     x = randn(10, 10)
     y = randn(10, 10)
-    gs = TensorAD.gradient(f, DiffTensor(x; requires_grad=true), DiffTensor(y; requires_grad=true))
+    gs = TensorAD.gradient(f, DiffTensor(x), DiffTensor(y))
     hs = ForwardDiff.gradient(x->f(reshape(x[1:100], 10, 10), reshape(x[101:200], 10, 10))[], vcat(vec(x), vec(y)))
     @test vcat(vec(gs[1].data), vec(gs[2].data)) ≈ hs
 end
@@ -21,28 +21,17 @@ end
         z = ein"ij,jk->ik"(x, y)
         return ein"ii->"(z)
     end
-    x = DiffTensor(randn(10, 10); requires_grad=true)
-    y = DiffTensor(randn(10, 10); requires_grad=true)
-    gx, gy = TensorAD.gradient(f, x, y)
-    grad_storage = Dict{UInt,Any}()
-    TensorAD.accumulate_gradient!(grad_storage, gx.tracker.id, DiffTensor(fill(one(eltype(gx)), size(gx.data)...); requires_grad=true))
-    TensorAD.back!(gx.tracker, grad_storage)
-    @show grad_storage[y.tracker.id].data
-
-    grad_storage = Dict{UInt,Any}()
-    TensorAD.accumulate_gradient!(grad_storage, gy.tracker.id, DiffTensor(fill(one(eltype(gy)), size(gy.data)...); requires_grad=true))
-    TensorAD.back!(gy.tracker, grad_storage)
-    @show TensorAD.getgrad(grad_storage, x).data
-
+    x = DiffTensor(randn(10, 10))
+    y = DiffTensor(randn(10, 10))
     X = vcat(vec(x.data), vec(y.data))
     function f2(x)
         f(reshape(x[1:100], 10, 10), reshape(x[101:200], 10, 10))
     end
     j1 = ForwardDiff.jacobian(f2, X)
-    j2 = TensorAD.jacobian(f2, DiffTensor(X; requires_grad=true)).data
+    j2 = TensorAD.jacobian(f2, DiffTensor(X)).data
     @test j1 ≈ j2
     hs = FiniteDifferences.jacobian(central_fdm(5,1), x->ForwardDiff.gradient(x->f2(x)[], x), X)[1]
-    H = TensorAD.hessian(f2, DiffTensor(X; requires_grad=true))
+    H = TensorAD.hessian(f2, DiffTensor(X))
     @test H.data ≈ hs
     @test sum(H.data) ≈ sum(hs)
 end
@@ -57,7 +46,7 @@ end
     n = 1
     X = randn(2n)
     h1 = ForwardDiff.hessian(x->f(x)[], X)
-    h2 = TensorAD.hessian(f, DiffTensor(X; requires_grad=true)).data
+    h2 = TensorAD.hessian(f, DiffTensor(X)).data
     @show h1, h2
     @test h1 ≈ h2
 end
@@ -69,7 +58,7 @@ end
     end
     X = fill(0.5)
     h1 = ForwardDiff.hessian(x->f(x)[], X)
-    h2 = TensorAD.hessian(f, DiffTensor(X; requires_grad=true)).data
+    h2 = TensorAD.hessian(f, DiffTensor(X)).data
     @show h1, h2
     @test h1 ≈ h2
 end
@@ -85,10 +74,10 @@ end
     end
     X = [0.5, 0.6, 0.7]
     j1 = ForwardDiff.jacobian(x->f(x), X)
-    j2 = TensorAD.jacobian(f, DiffTensor(X; requires_grad=true)).data
+    j2 = TensorAD.jacobian(f, DiffTensor(X)).data
     @test j1 ≈ j2
     h1 = ForwardDiff.hessian(x->f(x)[], X)
-    h2 = TensorAD.hessian(f, DiffTensor(X; requires_grad=true)).data
+    h2 = TensorAD.hessian(f, DiffTensor(X)).data
     @show h1, h2
     @test h1 ≈ h2
 end

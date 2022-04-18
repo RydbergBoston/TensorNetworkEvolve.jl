@@ -1,7 +1,10 @@
 #_rrule(f, args...; kwargs...) = ChainRules.rrule(f, args...; kwargs...)
 
 function difftensor(data::AbstractArray, debug_info, backs::Pair...)
-    DiffTensor(data, any(pair->any(t->t.tracker.requires_grad, pair.first), backs), BackInfo(debug_info, backs...))
+    mask = [any(t->t.requires_grad, pair.first) for pair in backs]
+    t = DiffTensor(data, any(mask))
+    push!(GLOBAL_TAPE.instructs, Instruction(debug_info, t,backs[mask]...))
+    return t
 end
 
 for EC in [:DynamicEinCode, :StaticEinCode]
