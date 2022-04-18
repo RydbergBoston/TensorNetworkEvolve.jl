@@ -46,7 +46,15 @@ end
         (transpose, (randn(4,4),), ()),
         (TensorAD.accum, (randn(4,4), (:,:), randn(4,4)), ()),
         (cat, (randn(4,4), randn(4, 2)), (;dims=2)),
+        (copy, (randn(4,4),), ()),
+        (conj, (randn(4,4),), ()),
+        (+, (randn(4,4), randn(4, 4)), ()),
+        (-, (randn(4,4), randn(4, 4)), ()),
+        (-, (randn(4,4),), ()),
         (getindex, (randn(4,4), 3:4, 2:3), ()),
+        (Base.broadcast, (*, randn(4,4), randn(4, 4)), ()),
+        (Base.broadcast, (sin, randn(4,4)), ()),
+        (Base.broadcast, (cos, randn(4,4)), ()),
     ]
         @info "Differentiating function: $f"
         @test match_jacobian(f, args...; kwargs...)

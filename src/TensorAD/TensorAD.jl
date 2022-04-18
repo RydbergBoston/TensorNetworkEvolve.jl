@@ -26,10 +26,10 @@ function DiffTensor(data::AT, requires_grad::Bool, info) where {T,N,AT<:Abstract
     if AT <: DiffTensor
         error("DiffTensor in DiffTensor is forbidden to prevent errors.")
     end
-    DiffTensor(data, Tracker(objectid(data), requires_grad, info))
+    DiffTensor(data, Tracker(objectid((data, info)), requires_grad, info))
 end
 function DiffTensor(data::AT; requires_grad::Bool, info=BackInfo("∅", ())) where {T,N,AT<:AbstractArray{T,N}}
-    return DiffTensor(data, Tracker(objectid(data), requires_grad, info))
+    return DiffTensor(data, Tracker(objectid((data, info)), requires_grad, info))
 end
 
 function debug_info(f, args...; kwargs...)
@@ -86,7 +86,7 @@ end
 
 function back!(y::Tracker, grad_storage::AbstractDict)
     debug_info, backs = y.info.info, y.info.backs
-    @debug debug_info
+    @debug "$debug_info, backward $(y.id)"
     for pb in backs
         if any(t->t.requires_grad, pb.tensors)
             grads = pb.back(grad_storage[y.id])
@@ -104,25 +104,25 @@ function _extract_grads!(grad_storage, args::NTuple{K,Tracker}, grads::Tuple) wh
 end
 
 function hessian(f, x::DiffTensor{T,1}) where T
-    gx, = gradient(f, x)
     return jacobian(x->gradient(f, x)[1], x)
-
-    slices = typeof(x)[]
-    for i=1:length(x)
-        grad_storage = Dict{UInt,Any}()
-        hx = zero(gx)
-        hx.data[i] = one(T)
-        accumulate_gradient!(grad_storage, gx.tracker.id, hx)
-        back!(gx.tracker, grad_storage)
-        push!(slices, getgrad(grad_storage, x))
-    end
-    return cat(slices...; dims=2)
+    # gx, = gradient(f, x)
+    # slices = typeof(x)[]
+    # for i=1:length(x)
+    #     grad_storage = Dict{UInt,Any}()
+    #     hx = zero(gx)
+    #     hx.data[i] = one(T)
+    #     accumulate_gradient!(grad_storage, gx.tracker.id, hx)
+    #     back!(gx.tracker, grad_storage)
+    #     push!(slices, getgrad(grad_storage, x))
+    # end
+    # return cat(slices...; dims=2)
 end
 
 function jacobian(f, x::AbstractVector{T}) where T
     slices = typeof(x)[]
     y = f(x)
     for i=1:length(y)
+        @debug "hessian, row $i"
         grad_storage = Dict{UInt,Any}()
         gy = zero(y)
         gy.data[i] = one(T)

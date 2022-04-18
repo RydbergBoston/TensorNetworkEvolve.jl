@@ -7,7 +7,7 @@ using TensorNetworkEvolve.TensorAD
 @testset "diff tensor" begin
     function f(x, y)
         z = ein"ij,jk->ik"(x, y)
-        return ein"ii->"(z)
+        return ein"ii->"(sin.(cos.(z)) .* x .* y)
     end
     x = randn(10, 10)
     y = randn(10, 10)
@@ -38,12 +38,53 @@ end
     function f2(x)
         f(reshape(x[1:100], 10, 10), reshape(x[101:200], 10, 10))
     end
+    j1 = ForwardDiff.jacobian(f2, X)
+    j2 = TensorAD.jacobian(f2, DiffTensor(X; requires_grad=true)).data
+    @test j1 ≈ j2
     hs = FiniteDifferences.jacobian(central_fdm(5,1), x->ForwardDiff.gradient(x->f2(x)[], x), X)[1]
-    g = TensorAD.gradient(f2, DiffTensor(X; requires_grad=true))
-    @show g
     H = TensorAD.hessian(f2, DiffTensor(X; requires_grad=true))
-    @show H.data ≈ hs
-    @show sum(H.data), sum(hs)
-    #@show hs
-    #@test vcat(vec(gs[1]), vec(gs[2])) ≈ hs
+    @test H.data ≈ hs
+    @test sum(H.data) ≈ sum(hs)
+end
+
+@testset "hessian 2" begin
+    function f(xy)
+        n = length(xy) ÷ 2
+        x = xy[1:n]
+        y = xy[n+1:end]
+        ein"i,j->"(x, y)
+    end
+    n = 1
+    X = randn(2n)
+    h1 = ForwardDiff.hessian(x->f(x)[], X)
+    h2 = TensorAD.hessian(f, DiffTensor(X; requires_grad=true)).data
+    @show h1, h2
+    @test h1 ≈ h2
+end
+
+@testset "hessian 3" begin
+    function f(xy)
+        ein"i->"(sin.(cos.(sin.(xy))))
+    end
+    X = [0.5]
+    h1 = ForwardDiff.hessian(x->f(x)[], X)
+    h2 = TensorAD.hessian(f, DiffTensor(X; requires_grad=true)).data
+    @show h1, h2
+    @test h1 ≈ h2
+end
+
+@testset "hessian 4" begin
+    function f(xy)
+        x = xy[1:1]
+        y = xy[1:1]
+        z = xy[1:1]
+        #ein"i->"(((x .* y) .* z) .*a)
+        ein"i->"((x .* y) .* z)
+        #ein"i->"(ein"i,i->i"(ein"i,i->i"(ein"i,i->i"(x, y), z), a))
+    end
+    X = [0.5, 0.6, 0.7]
+    h1 = ForwardDiff.hessian(x->f(x)[], X)
+    h2 = TensorAD.hessian(f, DiffTensor(X; requires_grad=true)).data
+    @show h1, h2
+    @test h1 ≈ h2
 end

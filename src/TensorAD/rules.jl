@@ -14,7 +14,13 @@ for EC in [:DynamicEinCode, :StaticEinCode]
 end
 
 function Base.:(+)(x::DiffTensor, y::DiffTensor)
-    difftensor(x.data + y.data, debug_info(+, x, y), (x,)=>dy->(dy,), (y,)=>dy->(dy,))
+    difftensor(x.data + y.data, debug_info(+, x, y), (x,)=>dz->(dz,), (y,)=>dz->(dz,))
+end
+function Base.:(-)(x::DiffTensor, y::DiffTensor)
+    difftensor(x.data - y.data, debug_info(-, x, y), (x,)=>dz->(dz,), (y,)=>dz->(-dz,))
+end
+function Base.:(-)(x::DiffTensor)
+    difftensor(-x.data, debug_info(-, x), (x,)=>dz->(-dz,))
 end
 function Base.copy(x::DiffTensor)
     difftensor(copy(x.data), debug_info(copy, x), (x,)=>dy->(dy,))
@@ -50,14 +56,14 @@ function Base.reshape(x::DiffTensor, sz::Int...)
         (x,)=>dy->(reshape(dy, size0...),))
 end
 
-function Base.broadcast(::typeof(*), a::DiffTensor{T}, b::DiffTensor{T}) where T
-    difftensor(sin.(a.data), debug_info(broadcast, sin, a), (a,)=>dy->dy .* cos.(b), (b,)=>dy .* a)
+function Base.broadcasted(::typeof(*), a::DiffTensor{T}, b::DiffTensor{T}) where T
+    difftensor(a.data .* b.data, debug_info(Base.broadcasted, *, a, b), (a,)=>dy->(dy .* b,), (b,)=>dy->(dy .* a,))
 end
-function Base.broadcast(::typeof(sin), a::DiffTensor{T}) where T
-    difftensor(sin.(a.data), debug_info(broadcast, sin, a), (a,)=>dy .* cos.(a))
+function Base.broadcasted(::typeof(sin), a::DiffTensor{T}) where T
+    difftensor(sin.(a.data), debug_info(Base.broadcasted, sin, a), (a,)=>dy -> (dy .* cos.(a),))
 end
-function Base.broadcast(::typeof(cos), a::DiffTensor{T}) where T
-    difftensor(sin.(a.data), debug_info(broadcast, sin, a), (a,)=>-dy .* sin.(a))
+function Base.broadcasted(::typeof(cos), a::DiffTensor{T}) where T
+    difftensor(cos.(a.data), debug_info(Base.broadcasted, cos, a), (a,)=>dy -> (-dy .* sin.(a),))
 end
 function Base.cat(a::DiffTensor, B::DiffTensor...; dims)
     A = (a, B...)
