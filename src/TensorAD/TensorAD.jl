@@ -129,7 +129,7 @@ end
 
 function jacobian(f, x::DiffTensor{T}) where T
     empty!(GLOBAL_TAPE.instructs)
-    slices = typeof(x)[]
+    slices = DiffTensor{T,1}[]
     y = f(x)
     @debug GLOBAL_TAPE
     for i=1:length(y)
@@ -139,7 +139,7 @@ function jacobian(f, x::DiffTensor{T}) where T
         gy.data[i] = one(T)
         accumulate_gradient!(grad_storage, getid(y), gy)
         back!(GLOBAL_TAPE, grad_storage)
-        push!(slices, getgrad(grad_storage, x))
+        push!(slices, vec(getgrad(grad_storage, x)))
     end
     return transpose(cat(slices...; dims=2))
 end

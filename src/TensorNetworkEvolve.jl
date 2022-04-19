@@ -10,10 +10,10 @@ using Random
 using Yao: YaoBlocks
 using OMEinsumContractionOrders
 
+include("TensorAD/TensorAD.jl")
 include("peps.jl")
 include("tebd.jl")
 include("timeevolve.jl")
 include("cracker.jl")
-include("TensorAD/TensorAD.jl")
 
 end
