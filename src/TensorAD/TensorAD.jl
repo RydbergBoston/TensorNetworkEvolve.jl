@@ -1,7 +1,7 @@
 module TensorAD
 export DiffTensor
 
-using OMEinsum
+using OMEinsum, LinearAlgebra
 
 const ADTypes = Union{Float32, Float64, ComplexF64, ComplexF32}
 
@@ -23,12 +23,12 @@ const GLOBAL_TAPE = Tape(Instruction[])
 mutable struct DiffTensor{T<:ADTypes,N,AT<:AbstractArray{T,N}} <: AbstractArray{T,N}
     data::AT
     requires_grad::Bool
-end
-function DiffTensor(data::AT, requires_grad::Bool=true) where {T,N,AT<:AbstractArray{T,N}}
-    if AT <: DiffTensor
-        error("DiffTensor in DiffTensor is forbidden to prevent errors.")
+    function DiffTensor(data::AT, requires_grad::Bool=true) where {T,N,AT<:AbstractArray{T,N}}
+        if AT <: DiffTensor
+            error("DiffTensor in DiffTensor is forbidden to prevent errors.")
+        end
+        new{T,N,AT}(data, requires_grad)
     end
-    DiffTensor(data, requires_grad)
 end
 
 function debug_info(f, args...; kwargs...)

@@ -64,7 +64,7 @@ function accum(x::DiffTensor, indices, y::DiffTensor)
         debug_info(accum, x, indices, y), x=>projectto(x), y=>dz->projectto(y, dz[indices...]))
 end
 function Base.transpose(x::DiffTensor)
-    difftensor(transpose(x.data),
+    difftensor(projectto(x.data, transpose(x.data)),
         debug_info(transpose, x), x=>transpose)
 end
 
@@ -75,7 +75,7 @@ function Base.reshape(x::DiffTensor, sz::NTuple{N,Int}) where N
 end
 
 function Base.:(*)(a::Number, b::DiffTensor{T,N}) where {T,N}
-    res = N == 0 ? asarray(b.data, a * b.data) : a * b.data
+    res = asarray(a * b.data, b.data)
     difftensor(res, debug_info("*", a, b), b=>dy->projectto(b, dy * conj(a)))
 end
 Base.:(*)(a::DiffTensor{T,N}, b::Number) where {T,N} = b * a
@@ -120,6 +120,9 @@ function projectto(::DiffTensor{<:Complex}, x::DiffTensor{<:Complex})
     return x
 end
 projectto(x::DiffTensor) = y->projectto(x, y)
+function projectto(x::AbstractArray, y::LinearAlgebra.Transpose)
+    return typeof(x)(y)
+end
 
 ### COMPLEX ###
 function Base.real(x::DiffTensor)

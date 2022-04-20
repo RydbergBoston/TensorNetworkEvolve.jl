@@ -71,7 +71,7 @@ function match_random(f, args...; realpart=true, atol=1e-5, kwargs...)
     TensorAD.back!(TensorAD.GLOBAL_TAPE, grad_storage)
     g2 = vec(TensorAD.getgrad(grad_storage, X))
     @debug "g1 = $(g1), g2 = $(g2.data)"
-    return isapprox(g1, g2.data; atol)
+    return isapprox(g1, g2.data; atol) && typeof(X) == typeof(g2)
 end
 
 function match_hessian(f, args...; realpart=true, atol=1e-5, kwargs...)
