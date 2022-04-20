@@ -2,7 +2,6 @@ using Test, OMEinsum
 using ForwardDiff
 using FiniteDifferences
 using TensorNetworkEvolve.TensorAD
-#using TensorNetworkEvolve: TensorAD
 
 include("ADTest.jl")
 using .ADTest: match_jacobian, match_random, match_hessian

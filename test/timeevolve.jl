@@ -1,6 +1,6 @@
 using TensorNetworkEvolve, Random, Test
 using Graphs, Yao, ForwardDiff
-using Zygote
+using TensorNetworkEvolve.TensorAD
 
 @testset "sr" begin
     function rand_hamiltonian(g::SimpleGraph)
@@ -22,7 +22,10 @@ using Zygote
 
     h = rand_hamiltonian(g)
     p1 = rand_simplepeps(ComplexF64, g, 2; Dmax=4)
-    @test Zygote.gradient(norm, p1)[1] isa NamedTuple
+    vars = TensorAD.DiffTensor(variables(p1))
+    gvars = TensorAD.gradient(vars->norm(load_variables(p1, vars)), vars)
+    @show gvars
+
     @test TensorNetworkEvolve.iloss2(h, p1, variables(p1)) isa Real
     fvec = TensorNetworkEvolve.fvec(p1, h)
     @test fvec isa Vector

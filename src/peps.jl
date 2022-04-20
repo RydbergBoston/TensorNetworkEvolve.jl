@@ -113,7 +113,7 @@ Base.copy(peps::SimplePEPS{T,NF}) where {T,NF} = SimplePEPS{NF}(copy(peps.physic
 function inner_product(p1::PEPS, p2::PEPS)
     p1c = conj(p1)
     # we assume `p1` and `p2` have the same structure and virtual bond dimension.
-    p1.code_inner_product(alltensors(p1c)..., alltensors(p2)...)[]
+    p1.code_inner_product(alltensors(p1c)..., alltensors(p2)...)
 end
 
 """
@@ -299,7 +299,7 @@ end
 # ●----●----●----●   ← ⟨peps|
 # ┆    ┆    ┆    ┆
 # ●----●----●----●   ← |peps⟩
-LinearAlgebra.norm(peps::PEPS) = sqrt(abs(inner_product(peps, peps)))
+LinearAlgebra.norm(peps::PEPS) = sqrt.(abs.(inner_product(peps, peps)))  # inner product returns a rank 0 array
 function LinearAlgebra.normalize!(peps::PEPS)
     nm = sqrt(abs(inner_product(peps, peps)))
     return rmul!(peps, 1/nm)

@@ -32,8 +32,7 @@ function packargs(args, mask)
             if eltype(arg) <: Real
                 push!(vecs, vec(arg))
             else
-                varg = vec(arg)
-                push!(vecs, vcat(real(varg), imag(varg)))
+                push!(vecs, vcat(vec(real(arg)), vec(imag(arg))))
             end
         end
     end
@@ -71,7 +70,7 @@ function match_random(f, args...; realpart=true, atol=1e-5, kwargs...)
     TensorAD.accumulate_gradient!(grad_storage, TensorAD.getid(y), DiffTensor(gy, false))
     TensorAD.back!(TensorAD.GLOBAL_TAPE, grad_storage)
     g2 = vec(TensorAD.getgrad(grad_storage, X))
-    @show g1, g2.data
+    @debug "g1 = $(g1), g2 = $(g2.data)"
     return isapprox(g1, g2.data; atol)
 end
 

@@ -3,6 +3,7 @@ using ForwardDiff
 using TensorNetworkEvolve.TensorAD
 
 @testset "jacobians" begin
+    n = 3
     for T in [Float64, ComplexF64]
         for (f, args, kwargs) in [
             (ein"ii->", (randn(T,4,4),), ()),
@@ -23,15 +24,22 @@ using TensorNetworkEvolve.TensorAD
             (Base.broadcast, (*, randn(T,4,4), randn(T,4, 4)), ()),
             (Base.broadcast, (/, randn(T,4,4), randn(T,4, 4)), ()),
             (Base.broadcast, (^, randn(T,4,4), 3), ()),
+            (Base.broadcast, (^, randn(T,4,4), n), ()),
             (Base.broadcast, (sin, randn(T,4,4)), ()),
             (Base.broadcast, (cos, randn(T,4,4)), ()),
             (Base.broadcast, (sign, randn(T,4,4)), ()),
             (Base.broadcast, (abs, randn(T,4,4)), ()),
             (Base.broadcast, (sqrt, 10 .+ randn(T,4,4)), ()),
+            (Base.broadcast, (Complex, randn(T,4,4)), ()),
         ]
             @info "Differentiating function: $f, arg types: $(typeof(args))"
-            @test match_jacobian(f, args...; kwargs...)
+            @test match_jacobian(f, args...; realpart=true, kwargs...)
             @test match_random(f, args...; realpart=true, kwargs...)
+            if T <: Complex
+                @info "Differentiating function: $f, arg types: $(typeof(args)), imaginary part"
+                @test match_jacobian(f, args...; realpart=false, kwargs...)
+                @test match_random(f, args...; realpart=false, kwargs...)
+            end
         end
     end
 end
