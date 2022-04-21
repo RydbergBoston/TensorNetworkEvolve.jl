@@ -30,6 +30,10 @@ function Base.broadcasted(::typeof(/), x::DiffTensor{T1,N}, y::DiffTensor{T2,N})
     res = asarray(x.data ./ y.data, x.data)
     difftensor(res, debug_info("./", x, y), x=>dz->projectto(x, dz ./ conj(y)), y=>dz->projectto(y, -dz .* conj(x ./ y .^ 2)))
 end
+function Base.broadcasted(::typeof(inv), x::DiffTensor{T1,N}) where {T1,N}
+    res = asarray(inv.(x.data), x.data)
+    difftensor(res, debug_info("inv.", x), x=>dz->projectto(x, -dz .* conj(inv.(x) .^ 2)))
+end
 function Base.broadcasted(::typeof(^), x::DiffTensor, y::Number)
     res = asarray(x.data .^ y, x.data)
     difftensor(res, debug_info(".^", x, y), x=>dz-> dz .* conj(y * x .^ (y-1)))
@@ -80,6 +84,26 @@ function Base.:(*)(a::Number, b::DiffTensor{T,N}) where {T,N}
 end
 Base.:(*)(a::DiffTensor{T,N}, b::Number) where {T,N} = b * a
 Base.:(*)(a::DiffTensor{T1,2}, b::DiffTensor{T2,2}) where {T1,T2} = ein"ij,jk->ik"(a, b)
+
+# scalar-array multiply
+function Base.:(*)(a::DiffTensor{T1,0}, b::DiffTensor{T2,N}) where {T1,T2,N}
+    res = asarray(a.data[] * b.data, b.data)
+    difftensor(res, debug_info("*", a, b), a=>dy->projectto(a, sum(dy .* conj(b))), b=>dy->projectto(b, dy * conj(a)))
+end
+# array-scalar multiply
+Base.:(*)(a::DiffTensor{T1,N}, b::DiffTensor{T2,0}) where {T1,T2,N} = b * a
+# scalar multiply
+function Base.:(*)(a::DiffTensor{T1,0}, b::DiffTensor{T2,0}) where {T1,T2}
+    difftensor(asarray(a.data[] * b.data[], a.data), debug_info("*", a, b), a=>dz->projectto(a, conj(b) * dz), b=>dz->projectto(b, conj(a) * dz))
+end
+
+# sum and fill
+function Base.sum(a::DiffTensor{T,N}) where {T,N}
+    difftensor(asarray(sum(a.data), a.data), debug_info("sum", a), a=>dz->fill(dz, size(a)...))
+end
+function Base.fill(a::DiffTensor{T,0}, size::Union{Integer, AbstractUnitRange}...) where {T}
+    difftensor(fill(a.data[], size...), debug_info("fill", a), a=>dz->sum(dz))
+end
 
 function Base.broadcasted(::typeof(*), a::DiffTensor{T1,N}, b::DiffTensor{T2,N}) where {T1,T2,N}
     res = asarray(a.data .* b.data, a.data)
@@ -155,4 +179,3 @@ Base.map(::OMEinsum.ProjectTo{T}, x::DiffTensor) where T<:Real = real(x)
 # TODO
 # complex.
 # accum!
-# inv

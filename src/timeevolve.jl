@@ -26,13 +26,16 @@ end
 # im*L₂
 function iloss2(h, peps, variables)
     pl = load_variables(peps, variables)
-    pl = pl * (1/norm(pl))
-    pr = peps * (1/norm(peps))
+    pl = pl * inv.(norm(pl))
+    pr = peps * inv.(norm(peps))
     return real(expect(h, conj(pl), pr))
 end
 function fvec(peps::PEPS, h)
     variables = TensorNetworkEvolve.variables(peps)
-    return -im*TensorAD.gradient(x->iloss2(h, peps, x), DiffTensor(variables))[1]
+    return -im*TensorAD.gradient(x->iloss2(h, wrap_difftensor(peps), x), DiffTensor(variables))[1]
+end
+function wrap_difftensor(peps::PEPS)
+    return replace_tensors(peps, DiffTensor.(alltensors(peps)))
 end
 
 # @non_differentiable OMEinsum.optimize_greedy(code, size_dict)

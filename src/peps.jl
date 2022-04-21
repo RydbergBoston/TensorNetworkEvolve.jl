@@ -201,6 +201,9 @@ end
 nsite(peps::PEPS) = length(peps.physical_labels)
 nflavor(::PEPS{T,NF}) where NF = NF
 Dmax(peps::PEPS) = peps.Dmax
+tensortype(peps::PEPS) = eltype(peps.vertex_tensors)
+array_match_type(::Type{<:DiffTensor}, x::Array) = DiffTensor(x)
+array_match_type(::Type{<:Array}, x::Array) = x
 
 # all variables by flattening the tensors
 variables(peps::PEPS) = vcat(vec.(alltensors(peps))...)
@@ -288,9 +291,13 @@ function LinearAlgebra.rmul!(peps::PEPS, c::Number)
     peps.vertex_tensors .*= c^(1/nsite(peps))
     return peps
 end
-Base.:*(c::Number, peps::PEPS) = peps * c
-function Base.:*(peps::PEPS, c::Number)   # to support AD
+Base.:*(c, peps::PEPS) = peps * c
+function Base.:*(peps::PEPS, c::Number)   # to support AD? maybe not needed
     tensors = peps.vertex_tensors .* c^(1/nsite(peps))
+    return replace_tensors(peps, tensors)
+end
+function Base.:*(peps::PEPS, c::AbstractArray{T,0}) where T   # to support AD
+    tensors = [t * c .^ (1/nsite(peps)) for t in peps.vertex_tensors]
     return replace_tensors(peps, tensors)
 end
 
@@ -337,7 +344,6 @@ end
 
 function apply_onsite(peps::PEPS{T,LT}, i, mat::AbstractMatrix) where {T,LT}  # to support AD
     @assert size(mat, 1) == size(mat, 2)
-    ti = peps.vertex_tensors[i]
     old = getvlabel(peps, i)
     mlabel = [newlabel(peps, 1), getphysicallabel(peps, i)]
     tensors = map(1:length(peps.vertex_tensors)) do j
@@ -438,11 +444,11 @@ Yao.statevec(peps::PEPS) = vec(peps)
 for (APPLY, APPLY_ONSITE, MUL) in [(:_apply!, :apply_onsite!, :mul!),
         (:apply, :apply_onsite, :*)]
     @eval function YaoBlocks.$APPLY(peps::PEPS{T}, block::PutBlock{2,1}) where {T}
-        $APPLY_ONSITE(peps, block.locs[1], Matrix{T}(block.content))
+        $APPLY_ONSITE(peps, block.locs[1], array_match_type(tensortype(peps), Matrix{T}(block.content)))
     end
     @eval function YaoBlocks.$APPLY(peps::PEPS{T}, block::KronBlock{D,M,BT}) where {D,M,T,BT<:NTuple{M,AbstractBlock}}
         for (loc, g) in zip(block.locs, subblocks(block))
-            peps = $APPLY_ONSITE(peps, loc[1], Matrix{T}(g))
+            peps = $APPLY_ONSITE(peps, loc[1], array_match_type(tensortype(peps), Matrix{T}(g)))
         end
         return peps
     end
@@ -468,12 +474,15 @@ end
 # ┆    ┆    ┆    ┆
 # ●----●----●----●   ← |peps⟩
 function Yao.expect(operator::Add, pa::PEPS, pb::PEPS)
-    res = 0.0im
+    @assert length(pa.vertex_tensors) > 0
+    res = asarray(0.0im, first(pa.vertex_tensors))
     for term in Yao.subblocks(operator)
-        res += expect(term, pa, pb)
+        resi = expect(term, pa, pb)
+        res = res + resi
     end
     return res
 end
 function Yao.expect(operator::AbstractBlock, pa::PEPS, pb::PEPS)
-    inner_product(pa, apply(pb, operator))
+    opb = apply(pb, operator)
+    inner_product(pa, opb)
 end

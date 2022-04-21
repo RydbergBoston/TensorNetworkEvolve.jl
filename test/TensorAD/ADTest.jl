@@ -1,6 +1,6 @@
 module ADTest
 
-using ForwardDiff, FiniteDifferences, TensorNetworkEvolve.TensorAD
+using ForwardDiff, FiniteDifferences, TensorNetworkEvolve.TensorAD, OMEinsum
 
 function unpackargs(args, x, mask)
     start = 0
@@ -43,9 +43,9 @@ function build_testfunc(f, args...; mask=map(x->x isa AbstractArray{<:TensorAD.A
     function (x)
         _args = unpackargs(args, x, mask)
         if realpart
-            real(f(_args...; kwargs...))
+            OMEinsum.asarray(real(f(_args...; kwargs...)), x)
         else
-            imag(f(_args...; kwargs...))
+            OMEinsum.asarray(imag(f(_args...; kwargs...)), x)
         end
     end, packargs(args, mask)
 end

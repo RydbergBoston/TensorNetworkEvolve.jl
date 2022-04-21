@@ -92,6 +92,9 @@ function Base.show(io::IO, tape::Tape)
     end
 end
 
+OMEinsum.asarray(x::Number, y::DiffTensor) = DiffTensor(asarray(x,y.data), y.requires_grad)
+OMEinsum.asarray(x::DiffTensor, y::DiffTensor) = x  # fix ambiguity error
+
 # does not return gradients in kwargs
 # always return a tuple
 function gradient(f, args...; kwargs...)
