@@ -16,11 +16,11 @@ Zygote = "e88e6eb3-aa80-5325-afca-941959d7151f"
 
 [compat]
 Cracker = "0.1"
-Graphs = "1.4"
+Graphs = "1.7"
 KrylovKit = "0.5"
 OMEinsum = "0.6"
 OMEinsumContractionOrders = "0.6"
-Yao = "0.7"
+Yao = "0.8"
 Zygote = "0.6"
 julia = "1"
 

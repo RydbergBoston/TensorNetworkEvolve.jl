@@ -1,8 +1,3 @@
-using KrylovKit
-using Yao: Add
-#using Zygote: gradient, @non_differentiable
-using .TensorAD: gradient, DiffTensor
-
 function sr_step(peps, h)
     vars = linsolve(x->apply_smatrix(peps, x), -im .* fvec(peps, h), variables(peps), GMRES())
     load_variables!(copy(peps), vars)

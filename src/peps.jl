@@ -1,10 +1,3 @@
-export PEPS, VidalPEPS, SimplePEPS, zero_vidalpeps, zero_simplepeps, rand_simplepeps, rand_vidalpeps
-export state, statevec, getvlabel, getphysicallabel, newlabel, findbondtensor, virtualbonds
-export apply_onbond!, apply_onsite!, inner_product, norm, normalize!
-export variables, load_variables!, load_variables
-using LinearAlgebra
-using OMEinsumContractionOrders: CodeOptimizer, CodeSimplifier, SlicedEinsum
-using OMEinsum: DynamicEinCode, NestedEinsum
 const OrderedEinCode{LT} = Union{NestedEinsum{DynamicEinCode{LT}}, SlicedEinsum{LT,NestedEinsum{DynamicEinCode{LT}}}}
 
 # we implement the register interface because we want to use the operator system in Yao.
@@ -308,8 +301,8 @@ end
 # ●----●----●----●   ← |peps⟩
 LinearAlgebra.norm(peps::PEPS) = sqrt.(abs.(inner_product(peps, peps)))  # inner product returns a rank 0 array
 function LinearAlgebra.normalize!(peps::PEPS)
-    nm = sqrt(abs(inner_product(peps, peps)))
-    return rmul!(peps, 1/nm)
+    nm = sqrt.(abs.(inner_product(peps, peps)))
+    return rmul!(peps, 1/nm[])
 end
 
 # contractor, the not cached version.
@@ -441,7 +434,7 @@ end
 Yao.nqubits(peps::PEPS) = nsite(peps)
 Yao.nactive(peps::PEPS) = nsite(peps)
 Yao.statevec(peps::PEPS) = vec(peps)
-for (APPLY, APPLY_ONSITE, MUL) in [(:_apply!, :apply_onsite!, :mul!),
+for (APPLY, APPLY_ONSITE, MUL) in [(:unsafe_apply!, :apply_onsite!, :mul!),
         (:apply, :apply_onsite, :*)]
     @eval function YaoBlocks.$APPLY(peps::PEPS{T}, block::PutBlock{2,1}) where {T}
         $APPLY_ONSITE(peps, block.locs[1], array_match_type(tensortype(peps), Matrix{T}(block.content)))
@@ -461,8 +454,8 @@ for (APPLY, APPLY_ONSITE, MUL) in [(:_apply!, :apply_onsite!, :mul!),
     end
 end
 # no non-inplace version defined.
-YaoBlocks._apply!(peps::PEPS, block::PutBlock{2,2}) = invoke(YaoBlocks._apply!, Tuple{PEPS,PutBlock{D,2} where D}, peps, block)
-function YaoBlocks._apply!(peps::PEPS{T}, block::PutBlock{D,2}) where {T,D}
+YaoBlocks.unsafe_apply!(peps::PEPS, block::PutBlock{2,2}) = invoke(YaoBlocks.unsafe_apply!, Tuple{PEPS,PutBlock{D,2} where D}, peps, block)
+function YaoBlocks.unsafe_apply!(peps::PEPS{T}, block::PutBlock{D,2}) where {T,D}
     apply_onbond!(peps, block.locs..., reshape(Matrix{T}(block.content), 2, 2, 2, 2))
 end
 
@@ -474,13 +467,9 @@ end
 # ┆    ┆    ┆    ┆
 # ●----●----●----●   ← |peps⟩
 function Yao.expect(operator::Add, pa::PEPS, pb::PEPS)
-    @assert length(pa.vertex_tensors) > 0
-    res = asarray(0.0im, first(pa.vertex_tensors))
-    for term in Yao.subblocks(operator)
-        resi = expect(term, pa, pb)
-        res = res + resi
+    return sum(Yao.subblocks(operator)) do term
+        expect(term, pa, pb)
     end
-    return res
 end
 function Yao.expect(operator::AbstractBlock, pa::PEPS, pb::PEPS)
     opb = apply(pb, operator)
