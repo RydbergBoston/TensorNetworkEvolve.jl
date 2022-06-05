@@ -435,7 +435,7 @@ end
 Yao.nqubits(peps::PEPS) = nsite(peps)
 Yao.nactive(peps::PEPS) = nsite(peps)
 Yao.statevec(peps::PEPS) = vec(peps)
-for (APPLY, APPLY_ONSITE, MUL) in [(:_apply!, :apply_onsite!, :mul!),
+for (APPLY, APPLY_ONSITE, MUL) in [(:unsafe_apply!, :apply_onsite!, :mul!),
         (:apply, :apply_onsite, :*)]
     @eval function YaoBlocks.$APPLY(peps::PEPS{T}, block::PutBlock{2,1}) where {T}
         $APPLY_ONSITE(peps, block.locs[1], Matrix{T}(block.content))
@@ -455,8 +455,8 @@ for (APPLY, APPLY_ONSITE, MUL) in [(:_apply!, :apply_onsite!, :mul!),
     end
 end
 # no non-inplace version defined.
-YaoBlocks._apply!(peps::PEPS, block::PutBlock{2,2}) = invoke(YaoBlocks._apply!, Tuple{PEPS,PutBlock{D,2} where D}, peps, block)
-function YaoBlocks._apply!(peps::PEPS{T}, block::PutBlock{D,2}) where {T,D}
+YaoBlocks.unsafe_apply!(peps::PEPS, block::PutBlock{2,2}) = invoke(YaoBlocks.unsafe_apply!, Tuple{PEPS,PutBlock{D,2} where D}, peps, block)
+function YaoBlocks.unsafe_apply!(peps::PEPS{T}, block::PutBlock{D,2}) where {T,D}
     apply_onbond!(peps, block.locs..., reshape(Matrix{T}(block.content), 2, 2, 2, 2))
 end
 
@@ -468,11 +468,9 @@ end
 # ┆    ┆    ┆    ┆
 # ●----●----●----●   ← |peps⟩
 function Yao.expect(operator::Add, pa::PEPS, pb::PEPS)
-    res = 0.0im
-    for term in Yao.subblocks(operator)
-        res += expect(term, pa, pb)
+    return sum(Yao.subblocks(operator)) do term
+        expect(term, pa, pb)
     end
-    return res
 end
 function Yao.expect(operator::AbstractBlock, pa::PEPS, pb::PEPS)
     inner_product(pa, apply(pb, operator))

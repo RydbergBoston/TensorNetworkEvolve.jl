@@ -26,8 +26,8 @@ end
 # im*L₂
 function iloss2(h, peps, variables)
     pl = load_variables(peps, variables)
-    pl = pl * (1/norm(pl))
-    pr = peps * (1/norm(peps))
+    pl = pl * (1 ./norm(pl))
+    pr = peps * (1 ./ norm(peps))
     return real(expect(h, conj(pl), pr))
 end
 function fvec(peps::PEPS, h)
