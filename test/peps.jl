@@ -70,15 +70,15 @@ end
     end
 
     p1 = rand_simplepeps(ComplexF64, g, 2; Dmax=4)
-    @test inner_product(p1, p1) ≈ statevec(p1)' * statevec(p1)
+    @test inner_product(p1, p1)[] ≈ statevec(p1)' * statevec(p1)
 
     p1 = rand_simplepeps(ComplexF64, g, 2; Dmax=4)
     p2 = rand_simplepeps(ComplexF64, g, 2; Dmax=4)
-    @test inner_product(p1, p2) ≈ statevec(p1)' * statevec(p2)
+    @test inner_product(p1, p2)[] ≈ statevec(p1)' * statevec(p2)
 
     p1 = rand_vidalpeps(ComplexF64, g, 2; Dmax=4)
     p2 = rand_vidalpeps(ComplexF64, g, 2; Dmax=4)
-    @test inner_product(p1, p2) ≈ statevec(p1)' * statevec(p2)
+    @test inner_product(p1, p2)[] ≈ statevec(p1)' * statevec(p2)
 
     peps = rand_vidalpeps(ComplexF64, g, 2; Dmax=4)
     @test norm(vec(peps)) ≈ norm(peps)
@@ -107,6 +107,6 @@ end
     h = rand_hamiltonian(g)
     p1 = rand_simplepeps(ComplexF64, g, 2; Dmax=4)
     p2 = rand_simplepeps(ComplexF64, g, 2; Dmax=4)
-    @test expect(h, p1, p2) ≈ statevec(p1)' * mat(h) * statevec(p2)
-    @test expect(h, p1, p1) ≈ statevec(p1)' * mat(h) * statevec(p1)
+    @test expect(h, p1, p2)[] ≈ statevec(p1)' * mat(h) * statevec(p2)
+    @test expect(h, p1, p1)[] ≈ statevec(p1)' * mat(h) * statevec(p1)
 end

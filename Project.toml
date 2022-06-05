@@ -16,17 +16,18 @@ Zygote = "e88e6eb3-aa80-5325-afca-941959d7151f"
 
 [compat]
 Cracker = "0.1"
-Graphs = "1.4"
+Graphs = "1.7"
 KrylovKit = "0.5"
 OMEinsum = "0.6"
 OMEinsumContractionOrders = "0.6"
-Yao = "0.7"
+Yao = "0.8"
 Zygote = "0.6"
 julia = "1"
 
 [extras]
 ForwardDiff = "f6369f11-7733-5829-9624-2563aa707210"
+FiniteDifferences = "26cc04aa-876d-5657-8c51-4c34ba976000"
 Test = "8dfed614-e22c-5e08-85e1-65c5234f0b40"
 
 [targets]
-test = ["Test", "ForwardDiff"]
+test = ["Test", "ForwardDiff", "FiniteDifferences"]
