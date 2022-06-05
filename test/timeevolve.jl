@@ -33,3 +33,16 @@ using TensorNetworkEvolve.TensorAD
     fvec2 = ForwardDiff.gradient(x->TensorNetworkEvolve.iloss2(h, p1, _complex(x))[], reinterpret(Float64, variables(p1)))
     @test fvec.data ≈ _complex(fvec2) * -im
 end
+
+@testset "smatrix apply" begin
+    g = SimpleGraph(5)
+    for (i,j) in [(1,2), (1,3), (2,4), (2,5), (3,4), (3,5)]
+        add_edge!(g, i, j)
+    end
+
+    p1 = rand_simplepeps(ComplexF64, g, 2; Dmax=4)
+    x = randn(ComplexF64, length(variables(p1)))
+    v1 = TensorAD.DiffTensor(variables(p1))
+    v2 = TensorAD.DiffTensor(variables(p1))
+    @show TensorNetworkEvolve.apply_smatrix(p1, v1, v2, x)
+end

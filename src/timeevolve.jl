@@ -4,7 +4,35 @@ function sr_step(peps, h)
 end
 
 # TODO: this needs to be fixed
-function apply_smatrix(peps::PEPS, x)
+function apply_smatrix(peps::PEPS, v1, v2, x)
+    # Stage 1: computing gradient of the right branch
+    empty!(TensorAD.GLOBAL_TAPE.instructs)
+    pl = load_variables(peps, v1)
+    pr = load_variables(peps, v2)
+    y = inner_product(pl, pr)
+
+    # avoid propagating into the left branch.
+    TensorAD.requires_grad!(v1, false)
+    TensorAD.propagate_requires_grad!(TensorAD.GLOBAL_TAPE)
+
+    # back propagate!
+    grad_storage = TensorAD.init_storage!(y)
+    TensorAD.back!(TensorAD.GLOBAL_TAPE, grad_storage)
+    g1 = TensorAD.getgrad(grad_storage, v2)
+
+    # Stage 2: compute the gradient of (g1' * x) over `pr`
+    z = ein"i,i->"(x, g1)
+    TensorAD.requires_grad!(v1, true)
+    TensorAD.requires_grad!(v2, false)
+    TensorAD.requires_grad!(x, false)
+    TensorAD.propagate_requires_grad!(TensorAD.GLOBAL_TAPE)
+
+    # back propagate!
+    grad_storage = TensorAD.init_storage!(z)
+    TensorAD.back!(TensorAD.GLOBAL_TAPE, grad_storage)
+    g2 = TensorAD.getgrad(grad_storage, v1)
+    return g2
+
     g = TensorAD.gradient(x->inner_product(conj(peps), x), peps)
     vg = variables(g)
     res = zero(vg)

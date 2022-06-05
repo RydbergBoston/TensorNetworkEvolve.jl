@@ -67,7 +67,7 @@ function match_random(f, args...; realpart=true, atol=1e-5, kwargs...)
     g1 = vec(vec(gy)' * j1)
 
     grad_storage = Dict{UInt,Any}()
-    TensorAD.accumulate_gradient!(grad_storage, TensorAD.getid(y), DiffTensor(gy, false))
+    TensorAD.accumulate_gradient!(grad_storage, TensorAD.getid(y), DiffTensor(gy; requires_grad=false))
     TensorAD.back!(TensorAD.GLOBAL_TAPE, grad_storage)
     g2 = vec(TensorAD.getgrad(grad_storage, X))
     @debug "g1 = $(g1), g2 = $(g2.data)"
