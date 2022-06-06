@@ -8,7 +8,9 @@ function apply_smatrix(peps::PEPS, v1, v2, x)
     # Stage 1: computing gradient of the right branch
     empty!(TensorAD.GLOBAL_TAPE.instructs)
     pl = load_variables(peps, v1)
+    pl = pl * inv.(norm(pl))
     pr = load_variables(peps, v2)
+    pr = pr * inv.(norm(pr))
     y = inner_product(pl, pr)
 
     # avoid propagating into the left branch.
@@ -16,20 +18,27 @@ function apply_smatrix(peps::PEPS, v1, v2, x)
     TensorAD.propagate_requires_grad!(TensorAD.GLOBAL_TAPE)
 
     # back propagate!
-    grad_storage = TensorAD.init_storage!(y)
+    grad_storage = TensorAD.init_storage!(y; requires_grad=true)
     TensorAD.back!(TensorAD.GLOBAL_TAPE, grad_storage)
     g1 = TensorAD.getgrad(grad_storage, v2)
 
     # Stage 2: compute the gradient of (g1' * x) over `pr`
-    z = ein"i,i->"(x, g1)
     TensorAD.requires_grad!(v1, true)
     TensorAD.requires_grad!(v2, false)
-    TensorAD.requires_grad!(x, false)
     TensorAD.propagate_requires_grad!(TensorAD.GLOBAL_TAPE)
+    @assert TensorAD.requires_grad(g1)
+
+    @show typeof(x), typeof(g1)
+    z = ein"i,i->"(x, g1)
+    #@show TensorAD.GLOBAL_TAPE
+    @show TensorAD.getid(z)
+    TensorAD.propagate_requires_grad!(TensorAD.GLOBAL_TAPE)
+    @assert TensorAD.requires_grad(z)
 
     # back propagate!
     grad_storage = TensorAD.init_storage!(z)
     TensorAD.back!(TensorAD.GLOBAL_TAPE, grad_storage)
+    println(TensorAD.GLOBAL_TAPE)
     g2 = TensorAD.getgrad(grad_storage, v1)
     return g2
 

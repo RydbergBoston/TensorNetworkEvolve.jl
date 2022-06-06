@@ -184,12 +184,14 @@ end
 function propagate_requires_grad!(tape::Tape=GLOBAL_TAPE)
     # execute the program virtually, and set requires_grad to false
     for instruct in tape.instructs
+        println(instruct.info)
         for i in 1:length(instruct.backs)
             pb = instruct.backs[i]
             rg = any(x->GLOBAL_REQUIRES_GRAD[x], pb.input_ids)
             # turn off this partial backward
             pb.active[] = rg
             for id in pb.output_ids
+                #@show id, rg, pb.active[]
                 GLOBAL_REQUIRES_GRAD[id] = rg
             end
         end

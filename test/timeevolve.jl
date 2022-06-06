@@ -41,8 +41,8 @@ end
     end
 
     p1 = rand_simplepeps(ComplexF64, g, 2; Dmax=4)
-    x = randn(ComplexF64, length(variables(p1)))
+    x = TensorAD.DiffTensor(randn(ComplexF64, length(variables(p1))); requires_grad=false)
     v1 = TensorAD.DiffTensor(variables(p1))
     v2 = TensorAD.DiffTensor(variables(p1))
-    @show TensorNetworkEvolve.apply_smatrix(p1, v1, v2, x)
+    @show TensorNetworkEvolve.apply_smatrix(p1, v1, v2, x).data
 end

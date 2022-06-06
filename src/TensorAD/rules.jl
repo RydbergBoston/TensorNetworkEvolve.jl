@@ -1,5 +1,5 @@
 for EC in [:DynamicEinCode, :StaticEinCode]
-    @eval function OMEinsum.einsum(code::$EC, xs::Union{Tuple{<:DiffTensor}, Tuple{<:DiffTensor,<:DiffTensor}, Tuple{<:DiffTensor,<:AbstractArray}, Tuple{<:AbstractArray,<:DiffTensor}}, size_dict::Dict)
+    @eval function OMEinsum.einsum(code::$EC, @nospecialize(xs::NTuple{N,DiffTensor} where N), size_dict::Dict)
         y = einsum(code, getdata.(xs), size_dict)
         return difftensor(y, debug_info(einsum, code, xs, size_dict), ntuple(i->(xs[i]=>
             dy->OMEinsum.einsum_grad(OMEinsum.getixs(code), xs, OMEinsum.getiy(code), size_dict, conj(dy), i)
