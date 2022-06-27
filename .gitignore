@@ -1,1 +1,8 @@
 /Manifest.toml
+
+#Folders
+.vscode/
+notes/
+notebooks/
+#bin/
+*.pyc
