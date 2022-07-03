@@ -97,7 +97,7 @@ alllabels(s::SimplePEPS) = s.vertex_labels
 # all vertex tensors and bond tensors (if any)
 alltensors(s::SimplePEPS) = s.vertex_tensors
 Base.copy(peps::SimplePEPS{T,NF}) where {T,NF} = SimplePEPS{NF}(copy(peps.physical_labels), copy(peps.virtual_labels),
-    copy(peps.vertex_labels), copy(peps.vertex_tensors), peps.max_index, 
+    copy(peps.vertex_labels), copy.(peps.vertex_tensors), peps.max_index, 
     peps.code_statetensor, peps.code_inner_product, peps.Dmax, peps.ϵ)
 
 # ●----●----●----●   ← ⟨peps1|
@@ -173,7 +173,7 @@ alltensors(peps::VidalPEPS) = [peps.vertex_tensors..., peps.bond_tensors...]
 # find bond tensor by virtual label
 findbondtensor(peps::VidalPEPS, b) = peps.bond_tensors[findall(==(b), peps.virtual_labels)[]]
 Base.copy(peps::VidalPEPS{T,NF}) where {T,NF} = VidalPEPS{NF}(copy(peps.physical_labels), copy(peps.virtual_labels),
-    copy(peps.vertex_labels), copy(peps.virtual_tensors), copy(peps.bond_tensors), peps.max_index,
+    copy(peps.vertex_labels), copy.(peps.virtual_tensors), copy.(peps.bond_tensors), peps.max_index,
     peps.code_statetensor, peps.code_inner_product, peps.Dmax, peps.ϵ)
 function Base.conj(peps::PEPS)
     replace_tensors(peps, conj.(alltensors(peps)))

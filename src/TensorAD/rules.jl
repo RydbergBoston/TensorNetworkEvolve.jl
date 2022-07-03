@@ -1,13 +1,3 @@
-function difftensor(data::AbstractArray, debug_info, backs::Pair...)
-    # filter out not required AD rules.
-    mask = [requires_grad(pair.first) for pair in backs]
-    t = DiffTensor(data, any(mask))
-    push!(GLOBAL_TAPE.instructs, Instruction(debug_info, t,backs[mask]...))
-    return t
-end
-requires_grad(t::DiffTensor) = t.requires_grad
-requires_grad(t::Tuple) = any(x->requires_grad(x), t)
-
 for EC in [:DynamicEinCode, :StaticEinCode]
     @eval function OMEinsum.einsum(code::$EC, @nospecialize(xs::NTuple{N,DiffTensor} where N), size_dict::Dict)
         y = einsum(code, getdata.(xs), size_dict)
