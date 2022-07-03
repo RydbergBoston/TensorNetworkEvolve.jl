@@ -475,3 +475,5 @@ function Yao.expect(operator::AbstractBlock, pa::PEPS, pb::PEPS)
     opb = apply(pb, operator)
     inner_product(pa, opb)
 end
+
+Yao.expect(operator::AbstractBlock, pa::PEPS) = expect(operator, pa, pa)

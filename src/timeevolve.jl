@@ -1,6 +1,47 @@
-function sr_step(peps, h)
-    vars = linsolve(x->apply_smatrix(peps, x), -im .* fvec(peps, h), variables(peps), GMRES())
-    load_variables!(copy(peps), vars)
+function parameter_gradient(peps, h, x0=nothing)
+    v1 = DiffTensor(variables(peps))
+    v2 = DiffTensor(variables(peps))
+    if x0 === nothing
+        x0 = randn(ComplexF64, length(v1))
+    end
+    x, info = linsolve(x->apply_smatrix(peps, v1, v2, DiffTensor(x; requires_grad=false)).data, fvec(peps, h).data, x0;
+        isposdef=true, ishermitian=true, verbosity=1, maxiter=200)
+    # NOTE: IterativeSolvers does not handle linear operator properly
+    #x, info = IterativeSolvers.gmres!(x0, x->apply_smatrix(peps, v1, v2, DiffTensor(x; requires_grad=false)).data, fvec(peps, h).data)
+    @info info
+    return x
+end
+
+function time_evolve_Euclidean!(peps, h; nstep, stepsize, operators=[], gx=nothing)
+    results = [ComplexF64[] for op in operators]
+    for (op, res) in zip(operators, results)
+        push!(res, asscalar(expect(op, peps)))
+    end
+    for i = 1:nstep
+        @info "step $i"
+        te_single_step!(peps, h, stepsize, gx)
+        for (op, res) in zip(operators, results)
+            push!(res, asscalar(expect(op, peps)))
+        end
+    end
+    return results
+end
+
+function te_single_step!(peps::PEPS, h, stepsize, gx)
+    gx = parameter_gradient(peps, h, gx)
+    load_variables!(peps, variables(peps) .+ gx .* stepsize)
+    normalize!(peps)
+    return gx
+end
+function te_single_step!(reg::AbstractArrayReg, h, stepsize, gx)
+    apply!(reg, time_evolve(h, stepsize))
+    return gx
+end
+
+function Yao.unsafe_apply!(peps::PEPS, te::TimeEvolution; nstep::Int=te.dt/1e-3)
+    stepsize = te.dt/step
+    time_evolve_Euclidean!(peps, te.H; nstep, stepsize)
+    return peps
 end
 
 function normalized_overlap(peps::PEPS, v1, v2)

@@ -66,3 +66,23 @@ end
     sx = TensorNetworkEvolve.apply_smatrix(p1, v1, v2, x).data
     @test h12 * reinterpret(Float64, x.data) ≈ reinterpret(Float64, sx)
 end
+
+@testset "heisenberg chain te" begin
+    nbit = 5
+    h = map(1:nbit-1) do i
+        sum([kron(nbit, i=>G, i+1=>G) for G in [X,Y,Z]])
+    end |> sum
+    peps = normalize!(rand_simplepeps(ComplexF64, path_graph(5), 2; Dmax=4))
+    reg = arrayreg(vec(peps))
+    @test vec(peps) ≈ statevec(reg)
+    stepsize = 0.01
+    nstep = 1
+    operators = [put(nbit, i=>Z) for i=1:1]
+
+    # the Yao version
+    results1 = time_evolve_Euclidean!(reg, h; stepsize, nstep, operators)
+
+    # the PEPS version
+    results2 = time_evolve_Euclidean!(peps, h; stepsize, nstep, operators)
+    @show results1, results2
+end
