@@ -3,56 +3,52 @@ function sr_step(peps, h)
     load_variables!(copy(peps), vars)
 end
 
-# TODO: this needs to be fixed
-function apply_smatrix(peps::PEPS, v1, v2, x)
-    # Stage 1: computing gradient of the right branch
-    empty!(TensorAD.GLOBAL_TAPE.instructs)
+function normalized_overlap(peps::PEPS, v1, v2)
     pl = load_variables(peps, v1)
     pl = pl * inv.(norm(pl))
     pr = load_variables(peps, v2)
     pr = pr * inv.(norm(pr))
-    y = inner_product(pl, pr)
+    return real(inner_product(pl, pr))
+end
 
-    # avoid propagating into the left branch.
-    TensorAD.requires_grad!(v1, false)
-    TensorAD.propagate_requires_grad!(TensorAD.GLOBAL_TAPE)
+# TODO: this needs to be fixed
+function apply_smatrix(peps::PEPS, v1, v2, x)
+    # Stage 1: build up the computational graph for the inner product `y = ⟨peps(v1)|peps(v2)⟩`
+    empty!(TensorAD.GLOBAL_TAPE.instructs)
+    TensorAD.requires_grad!(v1, true)   # set `true` to make the computational graph complete (avoid the automatic optimization)
+    TensorAD.requires_grad!(v2, true)
+    pl = load_variables(peps, v1)
+    pl = pl * inv.(norm(pl))
+    pr = load_variables(peps, v2)
+    pr = pr * inv.(norm(pr))
+    y = real(inner_product(pl, pr))
 
-    # back propagate!
+    # Stage 2: back propagate into the right branch and obtain `g₂ = ∂y / ∂v₂`
+    # NOTE: I tried avoid propagating into the left branch, but the computational graph for this branch can not be removed somehow!
+    # TensorAD.requires_grad!(v1, false)
+    # TensorAD.propagate_requires_grad!(TensorAD.GLOBAL_TAPE)
+
     grad_storage = TensorAD.init_storage!(y; requires_grad=true)
     TensorAD.back!(TensorAD.GLOBAL_TAPE, grad_storage)
-    g1 = TensorAD.getgrad(grad_storage, v2)
+    g2 = TensorAD.getgrad(grad_storage, v2)
 
-    # Stage 2: compute the gradient of (g1' * x) over `pr`
-    TensorAD.requires_grad!(v1, true)
-    TensorAD.requires_grad!(v2, false)
-    TensorAD.propagate_requires_grad!(TensorAD.GLOBAL_TAPE)
-    @assert TensorAD.requires_grad(g1)
+    # Stage 4: compute the second loss `z = g₂' * x`, note both `g₂` and `x` are complex numbers.
+    # inner product with `x`, treat real and imag parts as real numbers
+    @assert TensorAD.requires_grad(g2)
+    z = real(ein"i,i->"(conj(x), g2))
 
-    @show typeof(x), typeof(g1)
-    z = ein"i,i->"(x, g1)
-    #@show TensorAD.GLOBAL_TAPE
-    @show TensorAD.getid(z)
-    TensorAD.propagate_requires_grad!(TensorAD.GLOBAL_TAPE)
-    @assert TensorAD.requires_grad(z)
+    # Stage 3: compute the gradient of `sx = ∂z / ∂v₁`
+    # NOTE: I tried to not computing v2's gradients, but somehow the computational graph becomes incomplete.
+    # TensorAD.requires_grad!(v1, true)
+    # TensorAD.requires_grad!(v2, false)
+    # TensorAD.propagate_requires_grad!(TensorAD.GLOBAL_TAPE)
 
     # back propagate!
+    @assert TensorAD.requires_grad(z)
     grad_storage = TensorAD.init_storage!(z)
     TensorAD.back!(TensorAD.GLOBAL_TAPE, grad_storage)
-    println(TensorAD.GLOBAL_TAPE)
-    g2 = TensorAD.getgrad(grad_storage, v1)
-    return g2
-
-    g = TensorAD.gradient(x->inner_product(conj(peps), x), peps)
-    vg = variables(g)
-    res = zero(vg)
-    # replace target tensor by x_i
-    for i=1:nsite(peps)
-        qeqs = copy(peps)
-        qeqs.tensors[i] = x.tensors[i]
-        g_i = TensorAD.gradient(x->inner_product(conj(qeqs), x), peps)
-        res .+= variables(g_i)
-    end
-    return res .- vg .* (vg' * x)
+    sx = TensorAD.getgrad(grad_storage, v1)
+    return sx
 end
 
 # im*L₂

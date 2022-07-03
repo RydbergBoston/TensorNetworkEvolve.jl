@@ -56,9 +56,9 @@ function debug_info(f, args...; kwargs...)
     args = join(map(arg->"::$(typeof(arg))", args), ", ")
     if length(kwargs) != 0
         kwargs = join(["$k=$v" for (k,v) in kwargs], "")
-        "∂$f($args; $kwargs)"
+        "$f($args; $kwargs)"
     else
-        "∂$f($args)"
+        "$f($args)"
     end
 end
 Instruction(info::String, y::Union{DiffTensor, Tuple}, backs::Pair{<:Union{DiffTensor, NTuple{N,DiffTensor} where N}}...) = Instruction(info, PartialBack.(Ref(y), backs))
@@ -184,7 +184,6 @@ end
 function propagate_requires_grad!(tape::Tape=GLOBAL_TAPE)
     # execute the program virtually, and set requires_grad to false
     for instruct in tape.instructs
-        println(instruct.info)
         for i in 1:length(instruct.backs)
             pb = instruct.backs[i]
             rg = any(x->GLOBAL_REQUIRES_GRAD[x], pb.input_ids)
