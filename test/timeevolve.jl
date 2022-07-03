@@ -59,10 +59,9 @@ end
     v2 = TensorAD.DiffTensor(variables(p1))
     _complex(x::AbstractVector) = [Complex(x[2i-1], x[2i]) for i=1:length(x)÷2]
     f = x->TensorNetworkEvolve.normalized_overlap(p1, _complex(x)[1:length(v1.data)], _complex(x)[length(v1.data)+1:end])[]
-    x = reinterpret(Float64, vcat(v1.data, v2.data))
-    hconfig = ForwardDiff.HessianConfig(f, x, ForwardDiff.Chunk{5}())
-    @time ForwardDiff.hessian(f, x, hconfig, Val(false))
-    h2 = ForwardDiff.hessian(f, x, hconfig, Val(false))
+    xreal = reinterpret(Float64, vcat(v1.data, v2.data))
+    hconfig = ForwardDiff.HessianConfig(f, xreal, ForwardDiff.Chunk{5}())
+    h2 = ForwardDiff.hessian(f, xreal, hconfig, Val(false))
     h12 = h2[1:2*length(v1.data), 2*length(v1.data)+1:end]
     sx = TensorNetworkEvolve.apply_smatrix(p1, v1, v2, x).data
     @test h12 * reinterpret(Float64, x.data) ≈ reinterpret(Float64, sx)
