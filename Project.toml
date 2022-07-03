@@ -12,7 +12,6 @@ OMEinsum = "ebe7aa44-baf0-506c-a96f-8464559b3922"
 OMEinsumContractionOrders = "6f22d1fd-8eed-4bb7-9776-e7d684900715"
 Random = "9a3f8284-a2c9-5f02-9a11-845980a1fd5c"
 Yao = "5872b779-8223-5990-8dd0-5abbb0748c8c"
-Zygote = "e88e6eb3-aa80-5325-afca-941959d7151f"
 
 [compat]
 Cracker = "0.1"
@@ -21,12 +20,11 @@ KrylovKit = "0.5"
 OMEinsum = "0.6"
 OMEinsumContractionOrders = "0.6"
 Yao = "0.8"
-Zygote = "0.6"
 julia = "1"
 
 [extras]
-ForwardDiff = "f6369f11-7733-5829-9624-2563aa707210"
 FiniteDifferences = "26cc04aa-876d-5657-8c51-4c34ba976000"
+ForwardDiff = "f6369f11-7733-5829-9624-2563aa707210"
 Test = "8dfed614-e22c-5e08-85e1-65c5234f0b40"
 
 [targets]
