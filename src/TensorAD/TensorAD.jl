@@ -53,13 +53,17 @@ function requires_grad!(t::DiffTensor, val::Bool=true)
 end
 
 function debug_info(f, args...; kwargs...)
-    args = join(map(arg->"::$(typeof(arg))", args), ", ")
-    if length(kwargs) != 0
-        kwargs = join(["$k=$v" for (k,v) in kwargs], "")
-        "$f($args; $kwargs)"
-    else
-        "$f($args)"
+    args = ""
+    @debug begin
+        args = join(map(arg->"::$(typeof(arg))", args), ", ")
+        if length(kwargs) != 0
+            kwargs = join(["$k=$v" for (k,v) in kwargs], "")
+            "$f($args; $kwargs)"
+        else
+            "$f($args)"
+        end
     end
+    return args
 end
 Instruction(info::String, y::Union{DiffTensor, Tuple}, backs::Pair{<:Union{DiffTensor, NTuple{N,DiffTensor} where N}}...) = Instruction(info, PartialBack.(Ref(y), backs))
 function PartialBack(y::Union{DiffTensor, NTuple}, x::Pair)
