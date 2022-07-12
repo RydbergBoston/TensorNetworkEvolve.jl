@@ -1,6 +1,5 @@
 using Test, Random, TensorNetworkEvolve, Graphs, Yao
-using OMEinsumContractionOrders: TreeSA
-using LinearAlgebra
+using LinearAlgebra, OMEinsum
 
 @testset "initial state" begin
     g = SimpleGraph(5)

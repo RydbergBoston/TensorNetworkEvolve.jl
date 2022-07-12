@@ -1,4 +1,4 @@
-const OrderedEinCode{LT} = Union{NestedEinsum{DynamicEinCode{LT}}, SlicedEinsum{LT,NestedEinsum{DynamicEinCode{LT}}}}
+const OrderedEinCode{LT} = Union{NestedEinsum{LT}, SlicedEinsum{LT,<:NestedEinsum{LT}}}
 
 # we implement the register interface because we want to use the operator system in Yao.
 abstract type PEPS{T,NF,LT} <:AbstractRegister{NF} end

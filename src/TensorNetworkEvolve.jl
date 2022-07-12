@@ -7,10 +7,7 @@ using Graphs
 using Graphs: SimpleEdge
 using Random
 using LinearAlgebra
-using OMEinsumContractionOrders
-using OMEinsumContractionOrders: CodeOptimizer, CodeSimplifier, SlicedEinsum
 using OMEinsum
-using OMEinsum: DynamicEinCode, NestedEinsum
 using KrylovKit
 #using Zygote: gradient, @non_differentiable
 
