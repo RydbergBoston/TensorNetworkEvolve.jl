@@ -18,7 +18,7 @@ Cracker = "0.1"
 Graphs = "1.7"
 KrylovKit = "0.5"
 OMEinsum = "0.6"
-OMEinsumContractionOrders = "0.6"
+OMEinsumContractionOrders = "0.6, 0.7"
 Yao = "0.8"
 julia = "1"
 
